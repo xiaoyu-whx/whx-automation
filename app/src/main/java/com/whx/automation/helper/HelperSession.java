@@ -129,6 +129,20 @@ public final class HelperSession {
         // 30 秒：首次启动时 su 会弹授权框，必须给用户留出点「允许」的时间
         long deadline = System.currentTimeMillis() + 30000;
         while (System.currentTimeMillis() < deadline) {
+            Process p = process;
+            if (p != null && !p.isAlive()) {
+                // 进程都没了，再等端口就是白等：直接把可行动的原因抛出去
+                int code = -1;
+                try {
+                    code = p.exitValue();
+                } catch (IllegalThreadStateException ignored) {
+                }
+                stopLocked();
+                throw new IOException("helper 进程已退出（exit=" + code
+                        + "）：多半是 root 未授权或 su 拒绝了本次请求。"
+                        + "请在授权弹窗里选择「永久记住」并点「允许」，或先跑一次"
+                        + " python tools/whx.py run app/src/main/assets/scripts/grant_root.js");
+            }
             try {
                 return new HelperClient("127.0.0.1", port, 800);
             } catch (IOException e) {

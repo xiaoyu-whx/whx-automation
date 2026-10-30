@@ -6,7 +6,13 @@
 ## 命令
 
 全局 `--package`：默认 `com.whx.automation`；**操作小精灵时用它的包名**（小精灵是独立应用，
-脚本、参数、定时、历史都各存一份）：
+脚本、参数、定时、历史都各存一份）。注意它是**全局选项，要写在子命令前面**：
+
+```bash
+python tools/whx.py --package com.whx.sprite.demo run demo.js    # 对
+python tools/whx.py run demo.js --package com.whx.sprite.demo    # 错（子命令不认）
+```
+
 
 
 ```bash
@@ -161,6 +167,25 @@ python tools/whx.py run config_demo.js --config x=111 --config y=222 --config de
 ```
 
 脚本用 `config('x')` 读，键不存在会抛异常并列出可用键。
+
+## root 授权
+
+新装的包（尤其是每个小精灵）第一次要过一次 su 授权。可以试着自动点：
+
+```bash
+python tools/whx.py run app/src/main/assets/scripts/grant_root.js
+```
+
+它用无障碍找到「永久记住选择」和「允许」并点击。**注意**：某些魔改 ROM 的 su 管理器
+（本机雷电 9 的 CyanogenMod Superuser）在超时后会**直接拉黑**该应用，
+这种情况下自动化点不动，只能人工点一次。
+
+未授权时的报错是可行动的：
+
+```
+helper 进程已退出（exit=1）：多半是 root 未授权或 su 拒绝了本次请求。
+请在授权弹窗里选择「永久记住」并点「允许」，或先跑一次 …grant_root.js
+```
 
 ## 无障碍开关
 

@@ -6,7 +6,7 @@ API 28 / x86_64 / 720×1280 / 2026-10-31）。
 ## 0. 一条命令跑完全部（推荐）
 
 ```bash
-python tools/smoke.py            # 构建 → 单测 → 安装 → 12 项端到端检查
+python tools/smoke.py            # 构建 → 单测 → 安装 → 14 项端到端检查
 python tools/smoke.py --skip-build
 ```
 
@@ -26,7 +26,7 @@ python tools/smoke.py --skip-build
 [通过] 定时任务增删查
 [通过] 打包小精灵（含图标）      3.13 MB
 
-汇总：12 项，通过 12，失败 0，跳过 0
+汇总：14 项，通过 13，失败 0，跳过 1（新装小精灵需人工点一次「允许」）
 ```
 
 失败时退出码为 1，可直接接 CI。下面的章节是它覆盖不到的细节与人工项。
@@ -37,7 +37,7 @@ python tools/smoke.py --skip-build
 ./gradlew :core:test :helper:test :app:testDebugUnitTest
 ```
 
-**期望**：`BUILD SUCCESSFUL`，**64 个用例，0 失败**。
+**期望**：`BUILD SUCCESSFUL`，**71 个用例，0 失败**。
 
 | 模块 | 测试类 | 用例 | 覆盖 |
 | --- | --- | --- | --- |
@@ -49,6 +49,7 @@ python tools/smoke.py --skip-build
 | app | ScheduleStoreTest | 6 | 定时任务解析、范围校验、下次触发 |
 | app | RunHistoryTest | 5 | 历史记录解析、竖线转义、可读输出 |
 | app | RunScriptReceiverTest | 5 | 运行时配置 key=value 解析（空格/等号/异常项） |
+| helper | InputProbeTest | 7 | 真实 `getevent -pl` 样本解析（跳过非触摸设备/无 SLOT 轴/缺 Y 轴/空输入） |
 
 ## 2. 构建
 
@@ -98,6 +99,8 @@ python tools/whx.py run app/src/main/assets/scripts/ui_demo.js
 | 10 | 失败重试（`retry=2`） | 共 3 次尝试，间隔 2 秒 |
 | 11 | `ui enable` 后在系统设置里跑 `ui_demo.js` | `界面文本节点 17 个`、`找「设置」→ 256,127` |
 | 12 | `ui_click_demo.js` 点击「电池」 | Activity 变为 `Settings$PowerUsageSummaryActivity` |
+| 13 | `whx --package <精灵包> run demo.js` | 精灵的绑定脚本被广播执行（需先授权 root） |
+| 14 | `whx --package <精灵包> schedule add` | 精灵的定时任务与主应用互不干扰 |
 
 ## 5. 性能基线（回归对比用）
 

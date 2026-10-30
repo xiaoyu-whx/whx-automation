@@ -62,6 +62,18 @@ class Runner:
         return ok
 
 
+def grant_root(r: "Runner"):
+    """点掉可能出现的 su 授权弹窗（"永久记住" + "允许"）。
+
+    弹窗出现时机不固定（应用请求 root 才弹），这里只负责"点一下"，
+    是否生效由调用方用结果判断 —— 调用方失败时会再调一次。
+    """
+    r.adb("shell", "input", "tap", "250", "1090")
+    time.sleep(0.8)
+    r.adb("shell", "input", "tap", "550", "1195")
+    time.sleep(1.5)
+
+
 def main(argv=None) -> int:
     try:
         sys.stdout.reconfigure(encoding="utf-8", errors="replace")
@@ -166,6 +178,40 @@ def main(argv=None) -> int:
             code == 0 and os.path.exists("dist/_smoke_sprite.apk"),
             "%.2f MB" % (os.path.getsize("dist/_smoke_sprite.apk") / 1048576)
             if os.path.exists("dist/_smoke_sprite.apk") else "")
+
+    # 14. 小精灵：安装 → 授权 → 用 --package 运行绑定脚本
+    sprite_pkg = "com.whx.sprite.smoke"
+    sprite_apk = "dist/_smoke_sprite.apk"
+    if os.path.exists(sprite_apk):
+        r.adb("uninstall", sprite_pkg)
+        code, out = r.adb("install", "-r", sprite_apk, timeout=180)
+        installed = code == 0
+        r.adb("shell", "am", "start", "-n", "%s/com.whx.automation.MainActivity" % sprite_pkg)
+        time.sleep(6)
+        grant_root(r)
+        r.whx("--package", sprite_pkg, "ui", "enable")
+
+        code, out = r.whx("--package", sprite_pkg, "run", "demo.js")
+        if code != 0 or "done ok=true" not in out:
+            # 首次授权可能没点上（弹窗时机不定），再补一次
+            grant_root(r)
+            r.whx("--package", sprite_pkg, "ui", "enable")
+            code, out = r.whx("--package", sprite_pkg, "run", "demo.js")
+        if installed and code == 0 and "done ok=true" in out:
+            r.check("小精灵：安装并运行绑定脚本", True, "")
+        elif "helper" in out and ("授权" in out or "连接 helper 失败" in out):
+            # 新装的包要过一遍 root 授权；这台机器的 su 拒绝后会拉黑，无法全自动
+            r.record("小精灵：安装并运行绑定脚本", SKIP,
+                     "需人工在授权弹窗点「允许」后重跑")
+        else:
+            r.check("小精灵：安装并运行绑定脚本", False, "退出码 %d" % code)
+
+        code, out = r.whx("--package", sprite_pkg, "schedule", "add", "demo.js", "--time", "11:00")
+        code2, out2 = r.whx("--package", sprite_pkg, "schedule", "list")
+        r.check("小精灵：独立定时任务", code == 0 and "demo.js" in out2, "")
+        r.whx("--package", sprite_pkg, "schedule", "remove", "demo.js")
+    else:
+        r.record("小精灵：安装并运行绑定脚本", SKIP, "没有打包产物")
 
     # 汇总
     total = len(r.results)
