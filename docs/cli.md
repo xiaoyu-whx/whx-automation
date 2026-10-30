@@ -5,6 +5,11 @@
 
 ## 命令
 
+```bash
+python tools/whx.py doctor          # 环境自检：adb / SDK / JDK / 设备 / root / 无障碍 / helper / 广播
+```
+
+
 全局 `--package`：默认 `com.whx.automation`；**操作小精灵时用它的包名**（小精灵是独立应用，
 脚本、参数、定时、历史都各存一份）。注意它是**全局选项，要写在子命令前面**：
 
@@ -167,6 +172,31 @@ python tools/whx.py run config_demo.js --config x=111 --config y=222 --config de
 ```
 
 脚本用 `config('x')` 读，键不存在会抛异常并列出可用键。
+
+## 环境自检
+
+```bash
+python tools/whx.py doctor
+```
+
+```
+WHX 环境自检
+==============================================
+✓ adb                    D:\Android\Sdk\platform-toolsdb.EXE
+✓ Android SDK            D:\Android\Sdk
+✓ JDK                    C:\Program Files\...\java.EXE
+✓ 设备连接                   已连接 emulator-5554
+✓ root                   uid=0
+✓ 应用已安装                  com.whx.automation
+  版本                     0.1.0
+✓ 无障碍服务                  已启用
+✓ root helper            运行中（1 个）
+✓ 广播通道                   可发送
+==============================================
+全部就绪。跑 python tools/smoke.py 做端到端验证。
+```
+
+未就绪的项会给出 `→` 修复提示，退出码非 0，可直接接 CI。
 
 ## root 授权
 

@@ -190,3 +190,26 @@ host=github.com
 ```
 
 或者：控制面板 → 凭据管理器 → Windows 凭据 → 删除 `git:https://github.com`。
+
+## 已知设备侧问题与修复（2026-10-31）
+
+### helper 进程泄漏（已修）
+
+`whx doctor` 一上线就暴露了这个问题：设备上积了 **200 个 root 进程**（91 个 `app_process`）。
+
+原因：`HelperMain` 在客户端断开后只是在 `serve()` 里 `return`，外层 `while (running)` 又回到
+`accept()` 继续等 —— 端口还开着、进程一直挂着。App 被强停/重装后旧 helper 就永远留在那里。
+
+修复：
+
+- `serve()` 返回（客户端断开）后**直接退出进程**（单客户端设计，`HelperSession` 每次会话都会重新拉起）
+- `accept()` 加 60 秒超时：App 在连上之前就退了，进程也不会白占内存
+- `HelperSession` 在探测失败时**显式 close 旧 client** 再丢弃引用，避免 socket 悬着
+
+实测：`force-stop` 应用后 3 秒内 helper 全部退出，进程数 6 → 0。
+
+### su 授权无法完全自动化（部分 ROM）
+
+本机雷电 9 用 CyanogenMod Superuser：请求超时后**直接拉黑**该应用（`su: request rejected`），
+之后再请求会被秒拒。`assets/scripts/grant_root.js` 能用无障碍点到「永久记住选择」和「允许」，
+但一旦已经被拉黑，只能人工在设置里改回。已授权过的包不受影响。

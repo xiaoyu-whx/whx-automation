@@ -57,8 +57,19 @@ public final class HelperMain {
 
         try (ServerSocket server = new ServerSocket(port, 4, InetAddress.getByName("127.0.0.1"))) {
             server.setReuseAddress(true);
+            // 客户端（App）连上之前最多等 60 秒：App 若在连接前就退了，
+            // 本进程不能一直占着堆留着（设备上曾积到 200 个 root 进程）
+            server.setSoTimeout(60000);
             while (running) {
-                Socket socket = server.accept();
+                Socket socket;
+                try {
+                    socket = server.accept();
+                } catch (java.net.SocketTimeoutException timeout) {
+                    if (running) {
+                        System.out.println("WARN 60 秒内没有客户端连接，退出");
+                    }
+                    break;
+                }
                 try {
                     socket.setTcpNoDelay(true);
                     serve(socket);
@@ -70,6 +81,10 @@ public final class HelperMain {
                     } catch (IOException ignored) {
                     }
                 }
+                // 单客户端设计：HelperSession 每次会话都会重新拉起 helper，
+                // 连接一断就退出，否则进程会一直挂着（实测会积出上百个）
+                System.out.println("客户端已断开，helper 退出");
+                break;
             }
         } catch (IOException e) {
             System.out.println("ERR 监听失败: " + e);

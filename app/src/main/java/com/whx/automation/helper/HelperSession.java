@@ -80,6 +80,11 @@ public final class HelperSession {
                 return client;
             } catch (IOException e) {
                 Log.w(TAG, "helper 无响应，准备重启: " + e.getMessage());
+                // 先把旧连接关掉再丢弃引用：否则 socket 悬着，旧 helper 会一直在等读
+                try {
+                    client.close();
+                } catch (Throwable ignored) {
+                }
                 client = null;
             }
         }

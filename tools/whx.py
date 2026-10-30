@@ -67,6 +67,11 @@ class Adb:
     def shell(self, cmd, check=True, timeout=60):
         return self.sh("shell", cmd, check=check, timeout=timeout)
 
+    def broadcast_ping(self, pkg: str = APP_ID):
+        """发一个无害广播，确认组件能收到（用于自检）。"""
+        return self.shell("am broadcast -a com.whx.automation.SCHEDULE_LIST "
+                          "-f 0x00000020 -n %s" % component(pkg, SCHEDULE_RECEIVER), check=False)
+
     def su(self, cmd, check=True, timeout=60):
         """在 root 下执行（su 已永久授权则不会弹窗）。"""
         return self.sh("shell", "su -c '%s'" % cmd.replace("'", "'\\''"), check=check, timeout=timeout)
@@ -400,6 +405,93 @@ def read_pref(xml: str, key: str) -> str:
     return text
 
 
+def cmd_doctor(args):
+    """环境自检：一次性告诉你"哪里没准备好"以及怎么修。
+
+    公开仓库的新用户最先卡的就是环境（adb / root / 无障碍 / SDK），
+    与其在群里问，不如一条命令自检。
+    """
+    ok = True
+    print("WHX 环境自检")
+    print("=" * 46)
+
+    def line(name, good, detail="", fix=""):
+        nonlocal ok
+        mark = "✓" if good else "✗"
+        if not good:
+            ok = False
+        print("%s %-22s %s" % (mark, name, detail))
+        if not good and fix:
+            print("  → %s" % fix)
+
+    # 1. 工具
+    adb_path = shutil.which("adb")
+    line("adb", adb_path is not None, adb_path or "未找到",
+         "把 platform-tools 加进 PATH（Android SDK 里的 platform-tools 目录）")
+
+    sdk = os.environ.get("ANDROID_HOME") or os.environ.get("ANDROID_SDK_ROOT") or ""
+    if not sdk and os.path.exists("local.properties"):
+        for l in open("local.properties", encoding="utf-8"):
+            if l.startswith("sdk.dir="):
+                sdk = l.split("=", 1)[1].strip()
+    line("Android SDK", bool(sdk) and os.path.isdir(sdk), sdk or "未配置",
+         "设置 ANDROID_HOME 或写 local.properties 的 sdk.dir")
+
+    java = shutil.which("java")
+    line("JDK", java is not None, java or "未找到", "安装 JDK 17+ 并加进 PATH")
+
+    # 2. 设备
+    if adb_path is None:
+        print("（没有 adb，跳过设备检查）")
+        return 1
+    adb = pick_device(Adb(), args.serial)
+    out = adb.shell("echo ok", check=False)
+    line("设备连接", "ok" in out, "已连接 %s" % (adb.serial or "默认设备"),
+         "adb connect ip:port 或启动模拟器")
+
+    uid = adb.su("id -u", check=False).strip()
+    line("root", uid == "0", "uid=%s" % (uid or "?"),
+         "设备必须已 root；模拟器请开启 root 权限")
+
+    # 3. 应用
+    pkg = args.package
+    raw = adb.shell("pm path %s" % pkg, check=False).strip()
+    installed = raw.startswith("package:")
+    line("应用已安装", installed, pkg if installed else "未安装 %s" % pkg,
+         "adb install -r app/build/outputs/apk/release/app-release.apk")
+
+    if installed:
+        ver = adb.shell("dumpsys package %s | grep -m1 versionName" % pkg, check=False).strip()
+        print("  %-22s %s" % ("版本", ver.split("=")[-1] if "=" in ver else ver))
+
+        current = adb.shell("settings get secure enabled_accessibility_services",
+                            check=False).strip()
+        svc = a11y_service(pkg)
+        enabled = svc in current
+        line("无障碍服务", enabled, "已启用" if enabled else "未启用",
+             "python tools/whx.py ui enable" + ("" if pkg == APP_ID else " --package " + pkg))
+
+        ps = adb.shell("ps -A -o ARGS 2>/dev/null | grep -c HelperMain", check=False).strip()
+        try:
+            helper_count = int(ps)
+        except ValueError:
+            helper_count = 0
+        line("root helper", helper_count > 0, "运行中（%d 个）" % helper_count if helper_count else "未运行",
+             "跑一次任何脚本即会拉起；失败看 adb logcat -s WHX/Helper")
+
+        # 4. 端到端探针
+        out = adb.broadcast_ping()
+        line("广播通道", "result=0" in out, "可发送" if "result=0" in out else "发送失败",
+             "确认应用未被停用：adb shell pm enable " + pkg)
+
+    print("=" * 46)
+    if ok:
+        print("全部就绪。跑 python tools/smoke.py 做端到端验证。")
+    else:
+        print("有项目未就绪，按上面的 → 提示处理。")
+    return 0 if ok else 1
+
+
 def cmd_schedule(args):
     """定时任务：每天某时刻运行脚本（设备端 AlarmManager 触发，不需要 PC 在线）。"""
     adb = pick_device(Adb(), args.serial)
@@ -561,6 +653,9 @@ def main(argv=None) -> int:
     sp = sub.add_parser("shot", help="截图到 PC")
     sp.add_argument("path", help="保存路径，例如 dist/screen.png")
     sp.set_defaults(func=cmd_shot)
+
+    sp = sub.add_parser("doctor", help="环境自检（adb / root / 无障碍 / SDK）")
+    sp.set_defaults(func=cmd_doctor)
 
     sp = sub.add_parser("schedule", help="定时任务（每天某时刻运行）")
     sp.add_argument("action", choices=["add", "list", "remove"])
