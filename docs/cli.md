@@ -166,6 +166,7 @@ python tools/whx.py run config_demo.js --config x=111 --config y=222 --config de
 python tools/whx.py ui enable     # 用 root 写 secure 设置，无需手点
 python tools/whx.py ui            # 查看状态
 python tools/whx.py ui disable
+python tools/whx.py ui enable --package com.whx.sprite.demo   # 小精灵是独立包名
 ```
 
 > 注意：`whx run --cold` 会 force-stop 应用，无障碍服务会被系统摘掉，

@@ -378,12 +378,18 @@ def cmd_schedule(args):
     return 0
 
 
-A11Y_SERVICE = APP_ID + "/com.whx.automation.access.WhxAccessibilityService"
+A11Y_CLASS = "com.whx.automation.access.WhxAccessibilityService"
+
+
+def a11y_service(pkg: str) -> str:
+    """小精灵是独立包名，无障碍服务也要按包名拼。"""
+    return "%s/%s" % (pkg, A11Y_CLASS)
 
 
 def cmd_ui(args):
     """无障碍服务开关：脚本读界面文字的前提。"""
     adb = pick_device(Adb(), args.serial)
+    A11Y_SERVICE = a11y_service(args.package)
     if args.action == "enable":
         current = adb.shell("settings get secure enabled_accessibility_services",
                             check=False).strip()
@@ -502,6 +508,8 @@ def main(argv=None) -> int:
 
     sp = sub.add_parser("ui", help="无障碍服务开关（读界面文字）")
     sp.add_argument("action", nargs="?", default="status", choices=["enable", "disable", "status"])
+    sp.add_argument("--package", default=APP_ID,
+                    help="目标包名（小精灵是独立包名），默认 com.whx.automation")
     sp.set_defaults(func=cmd_ui)
 
     sp = sub.add_parser("history", help="查看运行历史")
