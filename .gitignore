@@ -1,0 +1,50 @@
+# ---- Android / Gradle ----
+.gradle/
+build/
+local.properties
+*.apk
+*.aab
+*.iml
+.idea/
+captures/
+.externalNativeBuild/
+.cxx/
+app/release/
+
+# ---- Python（工具脚本）----
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+.ruff_cache/
+.coverage
+
+# ---- Node（PC 工具，若后续使用）----
+node_modules/
+npm-debug.log*
+pnpm-debug.log
+
+# ---- 运行时产物 ----
+shots/
+.runs/
+debug/
+*.log
+xiaoyu.log
+*.tmp
+
+# ---- 编辑器 / 系统 ----
+.vscode/
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ---- 密钥（永不入库）----
+.env
+.env.*
+*.jks
+*.keystore
+!app/debug.keystore
+*.pem
+*.key
+secrets/

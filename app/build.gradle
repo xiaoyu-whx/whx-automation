@@ -1,0 +1,42 @@
+plugins {
+    id 'com.android.application'
+}
+
+android {
+    namespace 'com.whx.automation'
+    compileSdk 34
+
+    defaultConfig {
+        applicationId "com.whx.automation"
+        minSdk 24
+        targetSdk 34
+        versionCode 1
+        versionName "0.1.0"
+    }
+
+    buildTypes {
+        debug {
+            // 阶段一只要跑起来，不做混淆
+            minifyEnabled false
+        }
+        release {
+            minifyEnabled false
+            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+
+    packaging {
+        // helper 的 dex 后面会放进 assets，先不影响打包
+        resources.excludes += ['META-INF/*.kotlin_module']
+    }
+}
+
+dependencies {
+    implementation project(':core')
+    implementation project(':helper')
+}

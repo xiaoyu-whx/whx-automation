@@ -68,6 +68,22 @@
   `ABS_MT_POSITION_Y max=719`（=屏幕宽），`ABS_MT_SLOT max=15` → **轴需交换**
 - 截图在 **shell 身份（uid 2000）** 下即可成功；注入需要 **root**
 
+## 构建（阶段一已验证）
+
+```bash
+cd <repo>
+./gradlew assembleDebug          # 产物: app/build/outputs/apk/debug/app-debug.apk
+adb install -r app/build/outputs/apk/debug/app-debug.apk
+adb shell am start -n com.whx.automation/.MainActivity
+adb logcat -s WHX/Service
+```
+
+首次构建 58 秒，APK 14KB（debug、无资源、无第三方依赖）。
+
+**镜像说明（重要）**：本机直连 `repo.maven.apache.org` 与 `plugins.gradle.org` 的 TLS
+握手会被中断，因此 `settings.gradle` 中把阿里云镜像放在 Maven Central 之前；
+`google()` / `dl.google.com` 直连正常，保持不变。换机器后若直连正常，可自行删掉镜像行。
+
 ## 网络前置检查（M1 动手前跑一次）
 
 ```bash

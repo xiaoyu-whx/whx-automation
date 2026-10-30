@@ -22,22 +22,29 @@
 
 ---
 
-## 阶段一 · 工程基础
+## 阶段一 · 工程基础 ✅ 已完成（2026-10-30）
 
-| 任务 | 说明 |
-| --- | --- |
-| Android Studio / SDK | SDK 已装（`D:\Android\Sdk`：platform 34 + build-tools 34 + platform-tools） |
-| NDK + CMake | 阶段一先装上但不使用；真正用不用看阶段三的实测 |
-| Git | 仓库已在本地；推送待配置 |
-| Gradle 工程 | `app/` + `core/` + `helper/` 三模块，Java |
-| 首个 APK | 空界面 + 前台服务，装进雷电 9 |
+| 任务 | 说明 | 结果 |
+| --- | --- | --- |
+| Android SDK | `D:\Android\Sdk`：platform 34 + build-tools 34 + platform-tools | ✅ |
+| Gradle | 8.10.2（本机 `D:\Android\tools`，仓库内带 wrapper） | ✅ |
+| NDK + CMake | 阶段一暂不安装（项目书允许"先测再决定是否用 C++"） | 推迟到阶段三评估 |
+| Git | 本地仓库已就绪 | ✅ |
+| Gradle 工程 | `app/` + `core/` + `helper/` 三模块，纯 Java 17 | ✅ |
+| 首个 APK | 状态页 + 前台服务，装进雷电 9 正常 | ✅ |
+
+**实际结果**
+- `gradlew assembleDebug` **58 秒**构建成功，APK **14 KB**（无资源、无第三方依赖）
+- 安装启动无崩溃；界面正确显示 Android 9 / 720×1280 / 320dpi / x86_64
+- 前台服务启动后 `isForeground=true`，通知栏可见，`adb logcat -s WHX/Service` 有日志
+- 三模块依赖方向正确：`app → core / helper`，`core` 不依赖界面代码
+
+**踩坑记录**
+- 本机直连 `repo.maven.apache.org` 与 `plugins.gradle.org` 的 **TLS 握手被中断**
+  （`Remote host terminated the handshake`）。`dl.google.com` 正常。
+  解法：`settings.gradle` 里 Maven Central 前置阿里云镜像（`maven.aliyun.com`），Google 仓库保持直连。
 
 **交付**：能在 x86_64 模拟器上运行的基础 APK。
-
-**验收**
-- `assembleDebug` 一次成功，APK < 5MB
-- 安装启动无崩溃，日志能在 `adb logcat` 看到
-- 工程三模块划分清晰，`core` 不依赖 `app` 的界面代码
 
 ---
 

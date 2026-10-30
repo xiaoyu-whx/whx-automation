@@ -1,0 +1,28 @@
+// 镜像说明：本机直连 Maven Central / plugins.gradle.org 的 TLS 握手会被中断
+// （实测 2026-10-30：repo.maven.apache.org、plugins.gradle.org 均 "Remote host
+// terminated the handshake"），因此优先走阿里云镜像；google() 与 dl.google.com
+// 直连正常，保留为第一优先。
+pluginManagement {
+    repositories {
+        google()
+        maven { url = 'https://maven.aliyun.com/repository/gradle-plugin' }
+        maven { url = 'https://maven.aliyun.com/repository/public' }
+        gradlePluginPortal()
+        mavenCentral()
+    }
+}
+
+dependencyResolutionManagement {
+    repositoriesMode.set(RepositoriesMode.PREFER_SETTINGS)
+    repositories {
+        google()
+        maven { url = 'https://maven.aliyun.com/repository/public' }
+        mavenCentral()
+    }
+}
+
+rootProject.name = "whx-automation"
+
+include ':app'
+include ':core'
+include ':helper'
