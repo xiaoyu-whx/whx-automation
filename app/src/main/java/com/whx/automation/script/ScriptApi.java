@@ -261,6 +261,79 @@ public final class ScriptApi implements JsApi {
         }
     }
 
+    // ------------------------------------------------------------ 应用控制
+    @Override
+    public boolean appInstalled(String pkg) {
+        host.checkStop();
+        try {
+            host.context().getPackageManager().getPackageInfo(pkg, 0);
+            return true;
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
+    @Override
+    public String launchApp(String pkg) {
+        host.checkStop();
+        android.content.pm.PackageManager pm = host.context().getPackageManager();
+        android.content.Intent intent = pm.getLaunchIntentForPackage(pkg);
+        if (intent == null) {
+            host.log("error", "应用不存在或没有启动入口: " + pkg);
+            throw new IllegalArgumentException("无法启动应用: " + pkg);
+        }
+        intent.addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK);
+        try {
+            host.context().startActivity(intent);
+        } catch (Exception e) {
+            host.log("error", "启动应用失败: " + pkg + " (" + e.getMessage() + ")");
+            throw new IllegalStateException("启动应用失败: " + pkg, e);
+        }
+        sleep(600);
+        return currentPackage();
+    }
+
+    @Override
+    public String killApp(String pkg) {
+        host.checkStop();
+        String[] result = shell("am force-stop " + pkg);
+        host.log("info", "killApp " + pkg + " exit=" + result[0]);
+        return result[0];
+    }
+
+    @Override
+    public String currentPackage() {
+        host.checkStop();
+        com.whx.automation.access.WhxAccessibilityService svc =
+                com.whx.automation.access.WhxAccessibilityService.get();
+        if (svc != null) {
+            String pkg = svc.currentPackage();
+            if (pkg != null) {
+                return pkg;
+            }
+        }
+        // 没有无障碍就退回到 dumpsys（慢但可用）
+        String[] result = shell("dumpsys window | grep mCurrentFocus");
+        String out = result.length > 1 ? result[1] : "";
+        int at = out.indexOf("u0 ");
+        if (at >= 0) {
+            String rest = out.substring(at + 3).trim();
+            int slash = rest.indexOf("/");
+            return slash > 0 ? rest.substring(0, slash) : rest;
+        }
+        return "";
+    }
+
+    /** 走 helper 执行 root 命令，返回 {exitCode, 输出}。 */
+    private String[] shell(String cmd) {
+        try {
+            return com.whx.automation.helper.HelperSession.get()
+                    .client(host.context()).shell(cmd);
+        } catch (Exception e) {
+            throw new IllegalStateException("执行命令失败: " + cmd, e);
+        }
+    }
+
     // ------------------------------------------------------------ 界面文本
     private com.whx.automation.access.WhxAccessibilityService a11y() {
         com.whx.automation.access.WhxAccessibilityService svc =

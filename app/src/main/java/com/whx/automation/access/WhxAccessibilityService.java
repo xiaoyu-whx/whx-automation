@@ -55,6 +55,20 @@ public class WhxAccessibilityService extends AccessibilityService {
     public void onInterrupt() {
     }
 
+    /** 当前前台窗口的包名（无无障碍时脚本会退回 dumpsys）。 */
+    public String currentPackage() {
+        AccessibilityNodeInfo root = getRootInActiveWindow();
+        if (root == null) {
+            return null;
+        }
+        try {
+            CharSequence pkg = root.getPackageName();
+            return pkg == null ? null : pkg.toString();
+        } finally {
+            root.recycle();
+        }
+    }
+
     /** 界面上的一条文本。 */
     public static final class Node {
         public final String text;

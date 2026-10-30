@@ -58,6 +58,19 @@ public interface JsApi {
 
     void key(int keyCode);
 
+    // 应用控制
+    /** 应用是否已安装。 */
+    boolean appInstalled(String pkg);
+
+    /** 启动应用，返回启动后前台包名。 */
+    String launchApp(String pkg);
+
+    /** 强制停止应用（root），返回命令退出码。 */
+    String killApp(String pkg);
+
+    /** 当前前台应用包名。 */
+    String currentPackage();
+
     // 界面文本（无障碍）
     /** 当前界面上所有可见文本，格式 "文本|x,y,w,h;文本2|..."。 */
     String texts();

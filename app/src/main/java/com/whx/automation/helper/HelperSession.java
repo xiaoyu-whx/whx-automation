@@ -68,6 +68,11 @@ public final class HelperSession {
     }
 
     /** 确保 helper 可用；失败抛 IOException（不降级、不静默）。 */
+    /** 取可用的 client（必要时拉起 helper）。 */
+    public synchronized HelperClient client(android.content.Context context) throws IOException {
+        return ensureClient(context);
+    }
+
     public synchronized HelperClient ensureClient(Context context) throws IOException {
         if (client != null) {
             try {

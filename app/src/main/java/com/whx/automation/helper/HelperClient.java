@@ -117,6 +117,26 @@ public final class HelperClient implements Closeable {
         return readMs(sendAndRead(req.array()));
     }
 
+    /**
+     * 以 root 身份执行命令，返回 {exitCode, 输出}。
+     *
+     * <p>自动化里常见的"杀掉应用""改系统设置"都要 root 权限，
+     * 但脚本层不该自己拼 su 命令（每次都要过一遍授权），所以走已授权的 helper。
+     */
+    public String[] shell(String cmd) throws IOException {
+        byte[] raw = cmd.getBytes(java.nio.charset.StandardCharsets.UTF_8);
+        java.nio.ByteBuffer req = java.nio.ByteBuffer.allocate(1 + raw.length);
+        req.put(Proto.OP_SHELL);
+        req.put(raw);
+        String result = new String(sendAndRead(req.array()),
+                java.nio.charset.StandardCharsets.UTF_8);
+        int bar = result.indexOf('|');
+        if (bar < 0) {
+            return new String[]{"-1", result};
+        }
+        return new String[]{result.substring(0, bar), result.substring(bar + 1)};
+    }
+
     private byte[] sendAndRead(byte[] payload) throws IOException {
         write(payload);
         return readResponse();

@@ -9,7 +9,7 @@
 > Android 自动化运行平台：**PC 上开发，Android 上运行，可打包成独立 APK 脱离 PC 执行**。
 > 全部自研，不复刻任何现有工具的实现。
 
-**当前状态：阶段二十一 完成**（无障碍支持 findId／点击整行／滚动查找）。剩余：ARM64 云手机/真机验证。
+**当前状态：阶段二十二 完成**（应用控制 launchApp／killApp／currentPackage）。剩余：ARM64 云手机/真机验证。
 
 📄 最高依据：[项目书](docs/project-charter.md) —— 本文档集与项目书冲突时，以项目书为准。
 

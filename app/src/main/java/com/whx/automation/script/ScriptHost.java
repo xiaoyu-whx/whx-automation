@@ -56,7 +56,11 @@ public final class ScriptHost {
             "function findId(id){return api.findId(id)}",
             "function scrollFindText(t,exact,n){return api.scrollFindText(t,exact,n)}",
             "function clickText(t,exact){return api.clickText(t,exact)}",
-            "function uiReady(){return api.uiReady()}");
+            "function uiReady(){return api.uiReady()}",
+            "function appInstalled(p){return api.appInstalled(p)}",
+            "function launchApp(p){return api.launchApp(p)}",
+            "function killApp(p){return api.killApp(p)}",
+            "function currentPackage(){return api.currentPackage()}");
 
     /** 脚本结束回调。 */
     public interface Listener {

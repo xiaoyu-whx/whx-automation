@@ -554,6 +554,20 @@ CLI 不还原就会把多条记录挤成一行 —— 已统一走 `read_pref()`
 2. `nodes()` 只收集有文本的节点（省开销），但 `findId` 走**独立遍历** ——
    按 id 定位时容器恰恰是常见目标，不能被文本过滤掉。
 
+## 阶段二十二 · 应用控制（2026-10-31）
+
+自动化脚本绕不开"启动目标应用 / 杀掉它 / 确认现在在哪个应用"。
+
+| 能力 | 实测 |
+| --- | --- |
+| `appInstalled` | 存在的应用 true，不存在的 false |
+| `launchApp` | 启动后 `currentPackage()` 返回 `com.android.settings` |
+| `killApp` | `exit=0`，之后前台回到 `com.whx.automation` |
+| `currentPackage` | 有浏览器时走无障碍根节点包名，否则退回 `dumpsys window` |
+
+**新增 helper SHELL 协议**：helper 本身是 uid=0，脚本需要 root 操作时直接发命令过去，
+不用自己拼 `su -c`（否则每次都过一次授权弹窗）。
+
 ## 风险与对策（对齐项目书第十一节）
 
 | 风险 | 我们的实测认知 | 对策 |

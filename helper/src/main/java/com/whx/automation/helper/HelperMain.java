@@ -122,6 +122,10 @@ public final class HelperMain {
                     handleKey(out, args);
                     break;
 
+                case Proto.OP_SHELL:
+                    handleShell(out, args);
+                    break;
+
                 case Proto.OP_SHUTDOWN:
                     writeFrame(out, Proto.ERR_NONE, new byte[]{1});
                     running = false;
@@ -131,6 +135,41 @@ public final class HelperMain {
                     writeFrame(out, Proto.ERR_UNSUPPORTED, ("不支持的操作: " + op).getBytes("UTF-8"));
                     break;
             }
+        }
+    }
+
+    /**
+     * 以 root 身份执行一条命令（脚本用它做 kill 应用、改设置等系统操作）。
+     *
+     * <p>helper 本身已经是 uid=0，这里直接用 Runtime.exec 即可；
+     * 返回 "exitCode|输出" 让调用方能区分"命令跑成功"和"命令执行失败"。
+     */
+    private static void handleShell(DataOutputStream out, ByteBuffer args) throws IOException {
+        byte[] raw = new byte[args.remaining()];
+        args.get(raw);
+        String cmd = new String(raw, "UTF-8");
+        int code = -1;
+        String output = "";
+        try {
+            Process proc = Runtime.getRuntime().exec(new String[]{"sh", "-c", cmd});
+            java.io.ByteArrayOutputStream bos = new java.io.ByteArrayOutputStream();
+            readFully(proc.getInputStream(), bos);
+            readFully(proc.getErrorStream(), bos);
+            code = proc.waitFor();
+            output = new String(bos.toByteArray(), "UTF-8");
+        } catch (Exception e) {
+            output = "执行异常: " + e;
+        }
+        String result = code + "|" + output;
+        writeFrame(out, Proto.ERR_NONE, result.getBytes("UTF-8"));
+    }
+
+    private static void readFully(java.io.InputStream in, java.io.ByteArrayOutputStream out)
+            throws IOException {
+        byte[] buf = new byte[4096];
+        int n;
+        while ((n = in.read(buf)) > 0) {
+            out.write(buf, 0, n);
         }
     }
 

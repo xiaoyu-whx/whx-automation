@@ -180,6 +180,28 @@ step("登录", () => { click(500, 800); sleep(500); });   // 打点，供轨迹�
 所有动作统一接受 `{ hold, duration, ... }` 选项对象。
 
 
+## 应用控制
+
+```js
+appInstalled(pkg)     // 是否已安装
+launchApp(pkg)        // 启动并返回前台包名
+killApp(pkg)          // 强制停止（走 root helper），返回命令退出码
+currentPackage()      // 当前前台包名（有浏览器时走无障碍，更快更准）
+```
+
+实测：
+
+```
+[info] 设置已安装? true
+[info] 不存在的应用已安装? false
+[info] 启动后前台 = com.android.settings
+[info] killApp com.android.settings exit=0
+[info] 强停后前台 = com.whx.automation
+```
+
+`killApp` 走的是 helper 新增的 **SHELL 协议**（helper 本身是 uid=0，
+不需要脚本再拼 `su`，也不用每次过一遍授权）。
+
 ## 截图区域
 
 ```js

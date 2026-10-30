@@ -23,6 +23,7 @@ public final class Proto {
     public static final byte OP_PING = 4;      // argb: 无
     public static final byte OP_INFO = 5;      // argb: 无
     public static final byte OP_KEY = 6;       // argb: keyCode
+    public static final byte OP_SHELL = 7;     // payload: UTF-8 命令，返回 "exit|输出"
     public static final byte OP_SHUTDOWN = 9;  // argb: 无
 
     /** 错误码（与 docs/protocol.md 的错误语义保持一致） */
