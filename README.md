@@ -115,6 +115,8 @@ whx-automation/
 ```bash
 python tools/whx.py devices                      # 设备/root/分辨率
 python tools/whx.py run demo.js                  # 推脚本 → 运行 → 跟日志
+python tools/whx.py watch dist/my.js             # 监听改动，存盘即跑
+python tools/vision_cli.py template --tpl t.png  # PC 上验证找图命中位置
 python tools/whx.py shot dist/a.png              # 截图到 PC
 python tools/whx.py pack demo.js --label 小鱼 --pkg com.whx.sprite.demo
 ```

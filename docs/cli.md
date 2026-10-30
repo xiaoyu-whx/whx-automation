@@ -17,6 +17,63 @@ python tools/whx.py pack demo.js --label 小鱼 --pkg com.whx.sprite.demo
 
 多设备时用 `--serial emulator-5554` 指定；不指定则用第一个在线设备。
 
+### 写脚本的循环：watch
+
+```bash
+python tools/whx.py watch dist/my.js
+```
+
+监听本地文件，**存盘即推送运行**，日志实时回显：
+
+```
+监听 dist/watch_test.js（Ctrl-C 退出），改动后自动运行
+
+===== 第 1 次运行 00:06:49 =====
+[WHX/Task] start watch_test.js
+[WHX/Script] [info] 500 次取色耗时 25 ms
+[WHX/Task] done ok=true cost=430ms
+
+===== 第 2 次运行 00:07:01（检测到改动）=====
+[WHX/Script] [info] 改动生效了 1793376423981
+[WHX/Task] done ok=true cost=405ms
+```
+
+每次运行前会等文件"稳定"（编辑器保存常连续触发多次写入），避免跑到一半的代码。
+
+## 识别调试：vision_cli
+
+写完坐标总要验证对不对，所以把识别搬到 PC 上做，**结果直接画在截图上**：
+
+```bash
+python tools/whx.py shot dist/screen.png          # 先抓一张
+
+python tools/vision_cli.py pick --at 360,640      # 取某点颜色 → 直接给出脚本代码
+python tools/vision_cli.py color --hex "#14161A" --tol 6 --save dist/hit.png
+python tools/vision_cli.py crop  --region 30,140,400,70 --out dist/tpl.png
+python tools/vision_cli.py template --tpl dist/tpl.png --threshold 0.9 --save dist/tpl_hit.png
+```
+
+输出示例：
+
+```
+坐标 (360, 640) 颜色 #D6D7D7  rgb(214, 215, 215)
+
+脚本里这样用：
+  var c = getColor(360, 640);            // → '#D6D7D7'
+  var isMatch = isColor(360, 640, '#D6D7D7', 6);
+```
+
+```
+模板 dist/tpl.png 尺寸 400x70
+最佳匹配: 左上 (30, 140)  中心 (230, 175)  得分 1.000
+```
+
+**实测**：自己裁的模板找回自己返回 (30,140) 得分 1.000；随机噪声模板得分 0.099
+（低于阈值、退出码 1）；重复纹理能列出多个候选并给出各自得分。
+
+实现说明：找图用 **FFT 归一化互相关**（`np.fft.rfft2`），配合积分图算窗口均值/方差，
+整屏匹配在 PC 上是毫秒级，不需要 OpenCV。
+
 ## 实测
 
 | 命令 | 结果 |
