@@ -295,7 +295,61 @@ public final class ScriptApi implements JsApi {
     public String findText(String text, boolean exact) {
         host.checkStop();
         com.whx.automation.access.WhxAccessibilityService.Node n = a11y().findText(text, exact);
-        return n == null ? null : n.centerX() + "," + n.centerY();
+        // 用可点击目标中心：文本本身常常不可点，点它没反应
+        return n == null ? null : n.clickX + "," + n.clickY;
+    }
+
+    @Override
+    public String findTextAll(String text, boolean exact) {
+        host.checkStop();
+        StringBuilder sb = new StringBuilder();
+        for (com.whx.automation.access.WhxAccessibilityService.Node n : a11y().findAllText(text, exact)) {
+            if (sb.length() > 0) {
+                sb.append(';');
+            }
+            sb.append(n.clickX).append(',').append(n.clickY);
+        }
+        return sb.toString();
+    }
+
+    @Override
+    public String findId(String viewId) {
+        host.checkStop();
+        com.whx.automation.access.WhxAccessibilityService.Node n = a11y().findId(viewId);
+        return n == null ? null : n.clickX + "," + n.clickY;
+    }
+
+    /**
+     * 滚动查找：列表类界面一屏放不下，先滑再找。
+     *
+     * <p>每次向上滑动屏幕高度的 45%（太小容易卡住，太大容易滑过头），
+     * 滑完等 300ms 再看节点树 —— 太早读到的还是旧界面。
+     */
+    @Override
+    public String scrollFindText(String text, boolean exact, int maxSwipes) {
+        String hit = findText(text, exact);
+        if (hit != null) {
+            return hit;
+        }
+        int w = screenWidth();
+        int h = screenHeight();
+        int x = w / 2;
+        for (int i = 0; i < Math.max(0, maxSwipes); i++) {
+            host.checkStop();
+            try {
+                input.swipe(new int[][]{{x, (int) (h * 0.7)}, {x, (int) (h * 0.25)}}, 300);
+            } catch (InputBackend.InputException e) {
+                throw new IllegalStateException("滚动失败: " + e.getMessage(), e);
+            }
+            sleep(300);
+            hit = findText(text, exact);
+            if (hit != null) {
+                host.log("info", "滚动 " + (i + 1) + " 次后找到「" + text + "」");
+                return hit;
+            }
+        }
+        host.log("warn", "滚动 " + maxSwipes + " 次仍未找到「" + text + "」");
+        return null;
     }
 
     @Override

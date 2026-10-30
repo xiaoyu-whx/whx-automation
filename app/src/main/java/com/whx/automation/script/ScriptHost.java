@@ -52,6 +52,9 @@ public final class ScriptHost {
             "function hasConfig(k){return api.hasConfig(k)}",
             "function texts(){return api.texts()}",
             "function findText(t,exact){return api.findText(t,exact)}",
+            "function findTextAll(t,exact){return api.findTextAll(t,exact)}",
+            "function findId(id){return api.findId(id)}",
+            "function scrollFindText(t,exact,n){return api.scrollFindText(t,exact,n)}",
             "function clickText(t,exact){return api.clickText(t,exact)}",
             "function uiReady(){return api.uiReady()}");
 

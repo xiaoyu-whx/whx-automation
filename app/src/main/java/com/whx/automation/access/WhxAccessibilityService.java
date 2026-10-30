@@ -64,8 +64,13 @@ public class WhxAccessibilityService extends AccessibilityService {
         public final int h;
         public final boolean clickable;
         public final String viewId;
+        /** 可点击目标中心：优先自己（可点击时），否则取最近的可点击祖先。
+         *  很多列表项的文本本身不可点，点它没反应，必须点整行。 */
+        public final int clickX;
+        public final int clickY;
 
-        Node(String text, int x, int y, int w, int h, boolean clickable, String viewId) {
+        Node(String text, int x, int y, int w, int h, boolean clickable, String viewId,
+             int clickX, int clickY) {
             this.text = text;
             this.x = x;
             this.y = y;
@@ -73,6 +78,8 @@ public class WhxAccessibilityService extends AccessibilityService {
             this.h = h;
             this.clickable = clickable;
             this.viewId = viewId;
+            this.clickX = clickX;
+            this.clickY = clickY;
         }
 
         public int centerX() {
@@ -98,41 +105,115 @@ public class WhxAccessibilityService extends AccessibilityService {
             return out;
         }
         try {
-            collect(root, out, 0);
+            collect(root, out, 0, null);
         } finally {
             root.recycle();
         }
         return out;
     }
 
-    private void collect(AccessibilityNodeInfo node, List<Node> out, int depth) {
+    private void collect(AccessibilityNodeInfo node, List<Node> out, int depth,
+                         Rect clickableAncestor) {
         if (node == null || depth > 40 || out.size() > 500) {
             return;
         }
+        Rect self = new Rect();
+        node.getBoundsInScreen(self);
+        Rect clickTarget = node.isClickable() ? self : clickableAncestor;
         CharSequence text = node.getText();
         CharSequence desc = node.getContentDescription();
         String label = text != null && text.length() > 0 ? text.toString()
                 : (desc != null ? desc.toString() : "");
-        if (!label.isEmpty()) {
-            Rect r = new Rect();
-            node.getBoundsInScreen(r);
-            if (r.width() > 0 && r.height() > 0) {
-                out.add(new Node(label.trim(), r.left, r.top, r.width(), r.height(),
-                        node.isClickable(), node.getViewIdResourceName()));
-            }
+        if (!label.isEmpty() && self.width() > 0 && self.height() > 0) {
+            Rect target = clickTarget != null ? clickTarget : self;
+            out.add(new Node(label.trim(), self.left, self.top, self.width(), self.height(),
+                    node.isClickable(), node.getViewIdResourceName(),
+                    target.centerX(), target.centerY()));
         }
         int count = node.getChildCount();
         for (int i = 0; i < count; i++) {
             AccessibilityNodeInfo child = null;
             try {
                 child = node.getChild(i);
-                collect(child, out, depth + 1);
+                collect(child, out, depth + 1, clickTarget);
             } finally {
                 if (child != null) {
                     child.recycle();
                 }
             }
         }
+    }
+
+    /**
+     * 按资源 id 查找（例如 com.android.settings:id/search），比文字更稳。
+     *
+     * <p>单独走一遍遍历：{@link #nodes()} 只收集"有文本"的节点（容器类没有文本），
+     * 但按 id 定位时容器恰恰是常见目标，所以这里不受那个过滤限制。
+     */
+    public Node findId(String viewId) {
+        if (viewId == null || viewId.isEmpty()) {
+            return null;
+        }
+        AccessibilityNodeInfo root = getRootInActiveWindow();
+        if (root == null) {
+            return null;
+        }
+        try {
+            return findIdIn(root, viewId, 0, null);
+        } finally {
+            root.recycle();
+        }
+    }
+
+    private Node findIdIn(AccessibilityNodeInfo node, String viewId, int depth,
+                          Rect clickableAncestor) {
+        if (node == null || depth > 40) {
+            return null;
+        }
+        Rect self = new Rect();
+        node.getBoundsInScreen(self);
+        Rect clickTarget = node.isClickable() ? self : clickableAncestor;
+
+        String id = node.getViewIdResourceName();
+        if (viewId.equals(id) && self.width() > 0 && self.height() > 0) {
+            Rect target = clickTarget != null ? clickTarget : self;
+            CharSequence label = node.getText() != null && node.getText().length() > 0
+                    ? node.getText() : node.getContentDescription();
+            return new Node(label == null ? "" : label.toString().trim(),
+                    self.left, self.top, self.width(), self.height(),
+                    node.isClickable(), id, target.centerX(), target.centerY());
+        }
+        int count = node.getChildCount();
+        for (int i = 0; i < count; i++) {
+            AccessibilityNodeInfo child = null;
+            try {
+                child = node.getChild(i);
+                Node hit = findIdIn(child, viewId, depth + 1, clickTarget);
+                if (hit != null) {
+                    return hit;
+                }
+            } finally {
+                if (child != null) {
+                    child.recycle();
+                }
+            }
+        }
+        return null;
+    }
+
+    /** 找到所有匹配文本的节点（页面上可能有多个「确定」）。 */
+    public List<Node> findAllText(String text, boolean exact) {
+        List<Node> hits = new ArrayList<>();
+        if (text == null || text.isEmpty()) {
+            return hits;
+        }
+        for (Node n : nodes()) {
+            boolean hit = exact ? n.text.equals(text) : n.text.contains(text);
+            if (hit) {
+                hits.add(n);
+            }
+        }
+        return hits;
     }
 
     /** 找到第一条匹配文本的节点；exact=false 时按包含匹配。 */

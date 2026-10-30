@@ -65,6 +65,15 @@ public interface JsApi {
     /** 找文本，返回控件中心 "x,y"；找不到 null。exact=true 为全等匹配。 */
     String findText(String text, boolean exact);
 
+    /** 所有匹配的控件中心，格式 "x1,y1;x2,y2"。 */
+    String findTextAll(String text, boolean exact);
+
+    /** 按控件资源 id 定位，返回中心 "x,y" 或 null。 */
+    String findId(String viewId);
+
+    /** 滚动查找文本：没找到就往上滑，最多 maxSwipes 次。 */
+    String scrollFindText(String text, boolean exact, int maxSwipes);
+
     /** 找文本并点击（用当前触控后端）。找到返回中心坐标，找不到返回 null。 */
     String clickText(String text, boolean exact);
 

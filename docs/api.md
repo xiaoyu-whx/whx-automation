@@ -226,6 +226,21 @@ clickText(text, exact)    // 找到并点击，返回中心坐标或 null
 点击后 Activity: com.android.settings/.Settings$PowerUsageSummaryActivity
 ```
 
+```js
+findTextAll(text, exact)               // 所有匹配 "x1,y1;x2,y2"
+findId(viewId)                         // 按资源 id 定位，比文字稳
+scrollFindText(text, exact, maxSwipes) // 没找到就往上滑，最多 N 次
+```
+
+实测补充：
+
+| 调用 | 结果 |
+| --- | --- |
+| `findText('电池')` | `360,413` —— 返回的是**可点击行中心**，不是文字本身位置（点文字常没反应，点整行才有效） |
+| `findId('android:id/title')` | `360,344` |
+| `findId('com.android.settings:id/dashboard_container')` | `360,744`（容器没有文本，靠独立遍历才能命中） |
+| `scrollFindText('系统', false, 6)` | `滚动 1 次后找到「系统」→ 360,1064` |
+
 **启用方式**：`python tools/whx.py ui enable`（或 设置 → 无障碍 → WHX Automation）。
 未启用时脚本会明确报错并提示去开启，不会静默失败。
 
