@@ -9,7 +9,7 @@
 > Android 自动化运行平台：**PC 上开发，Android 上运行，可打包成独立 APK 脱离 PC 执行**。
 > 全部自研，不复刻任何现有工具的实现。
 
-**当前状态：阶段十二 完成**（release 壳可分发，R8 后 JS 桥接快 10×）。剩余：ARM64 云手机/真机验证。
+**当前状态：阶段十四 完成**（找图打通到脚本层 `findImageAsset`/`findImageFile`）。剩余：ARM64 云手机/真机验证。
 
 📄 最高依据：[项目书](docs/project-charter.md) —— 本文档集与项目书冲突时，以项目书为准。
 

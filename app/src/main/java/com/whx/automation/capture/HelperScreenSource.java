@@ -29,6 +29,11 @@ public final class HelperScreenSource implements ScreenSource {
         return "helper/surfacecontrol";
     }
 
+    /** 暴露 Context，供脚本层读 assets 模板用。 */
+    public Context context() {
+        return context;
+    }
+
     @Override
     public boolean available() {
         return HelperSession.get().isAlive();   // 缓存值，不发网络请求

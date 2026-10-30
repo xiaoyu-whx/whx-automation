@@ -180,6 +180,30 @@ step("登录", () => { click(500, 800); sleep(500); });   // 打点，供轨迹�
 所有动作统一接受 `{ hold, duration, ... }` 选项对象。
 
 
+## 找图（模板）
+
+```js
+findImageAsset(path, threshold)   // 模板打在 APK 里，路径相对 assets，推荐用于小精灵
+findImageFile(path, threshold)    // 模板是设备上的图片文件
+findImage(name, threshold)        // 用 ScriptHost 预注册的模板（宿主内部用）
+```
+
+返回命中区域中心 `"x,y"`，找不到返回 `null`。
+
+实测（templates/title.png，400×70）：
+
+```
+[info] 找图命中 templates/title.png 得分 1.000 位置 30,140
+[info] 标题命中中心 230,175
+```
+
+**注意**：QuickJS 会把 Java 异常折叠成 `InternalError: Java Exception`，
+所以真正原因（模板不存在、路径不对等）会**先写进日志**再抛出：
+
+```
+[error] 模板资源不存在: templates/不存在.png
+```
+
 ## 配置项（小精灵）
 
 ```js

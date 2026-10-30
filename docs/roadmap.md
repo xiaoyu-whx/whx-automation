@@ -446,6 +446,21 @@ debug 壳不能分发：无签名保护、无 R8 优化。本阶段补上 releas
 **踩坑**：第一版重试时回调公共 `start(..., 0)`，把"剩余次数"重置成 0，
 导致 `retry=2` 只跑了 2 次就停。改成内部入口 `startInternal(..., attemptsSoFar)` 保留计数。
 
+## 阶段十四 · 找图打通到脚本层（2026-10-31）
+
+发现一个真漏洞：`findImage` 依赖宿主预注册的模板，**脚本层根本拿不到模板**，
+等于这个头号功能在脚本里不可用。本阶段补上两条取模板的路径。
+
+| 能力 | 实测 |
+| --- | --- |
+| `findImageAsset('templates/title.png', 0.9)` | 命中 `位置 30,140 得分 1.000`，中心 (230,175) 正确 |
+| `findImageFile(path, threshold)` | 同上，读设备上的图片文件 |
+| 模板缺失 | 日志明确写 `[error] 模板资源不存在: …`（QuickJS 只能给出 InternalError，必须自己先打日志） |
+| 模板无纹理 | 与设备端一致：明确报错，不静默返回 null |
+
+配套：`app/src/main/assets/templates/` 放大模板，`assets/scripts/find_image_demo.js` 作样例；
+`tools/vision_cli.py crop` 可以直接从截图裁出模板放进这个目录。
+
 ## 风险与对策（对齐项目书第十一节）
 
 | 风险 | 我们的实测认知 | 对策 |

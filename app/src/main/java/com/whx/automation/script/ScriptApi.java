@@ -128,6 +128,58 @@ public final class ScriptApi implements JsApi {
         return hit == null ? null : hit.center().x + "," + hit.center().y;
     }
 
+    @Override
+    public String findImageFile(String path, double threshold) {
+        host.checkStop();
+        android.graphics.Bitmap bmp = android.graphics.BitmapFactory.decodeFile(path);
+        if (bmp == null) {
+            // QuickJS 会把 Java 异常折叠成 "InternalError: Java Exception"，
+            // 真正原因先自己打出来，否则用户根本不知道哪里错了
+            host.log("error", "模板文件读不出来（路径不对或不是图片）: " + path);
+            throw new IllegalArgumentException("模板文件读不出来: " + path);
+        }
+        try {
+            return matchBitmap(bmp, threshold, path);
+        } finally {
+            bmp.recycle();
+        }
+    }
+
+    @Override
+    public String findImageAsset(String assetPath, double threshold) {
+        host.checkStop();
+        try (java.io.InputStream in = host.context().getAssets().open(assetPath)) {
+            android.graphics.Bitmap bmp = android.graphics.BitmapFactory.decodeStream(in);
+            if (bmp == null) {
+                throw new IllegalArgumentException("模板资源不是有效图片: " + assetPath);
+            }
+            try {
+                return matchBitmap(bmp, threshold, assetPath);
+            } finally {
+                bmp.recycle();
+            }
+        } catch (java.io.IOException e) {
+            host.log("error", "模板资源不存在: " + assetPath);
+            throw new IllegalArgumentException("模板资源不存在: " + assetPath, e);
+        }
+    }
+
+    /** 把 Bitmap 转成 ARGB 数组后交给识别引擎。 */
+    private String matchBitmap(android.graphics.Bitmap bmp, double threshold, String name) {
+        int w = bmp.getWidth();
+        int h = bmp.getHeight();
+        int[] pixels = new int[w * h];
+        bmp.getPixels(pixels, 0, w, 0, 0, w, h);
+        com.whx.automation.core.vision.Hit hit =
+                Vision.findImage(frame(), pixels, w, h, threshold, null);
+        if (hit == null) {
+            return null;
+        }
+        host.log("info", "找图命中 " + name + " 得分 " + String.format(java.util.Locale.US, "%.3f", hit.score)
+                + " 位置 " + hit.x + "," + hit.y);
+        return hit.center().x + "," + hit.center().y;
+    }
+
     // ------------------------------------------------------------------ 触控
     public void click(double x, double y) {
         host.checkStop();
@@ -199,8 +251,8 @@ public final class ScriptApi implements JsApi {
         String v = config.get(key);
         if (v == null) {
             // 失败要吵：键拼错不能悄悄返回空串，否则脚本带着错误参数跑偏
-            throw new IllegalArgumentException("配置项不存在: " + key
-                    + "（可用: " + config.keySet() + "）");
+            host.log("error", "配置项不存在: " + key + "（可用: " + config.keySet() + "）");
+            throw new IllegalArgumentException("配置项不存在: " + key);
         }
         return v;
     }

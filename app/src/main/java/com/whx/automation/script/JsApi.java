@@ -34,6 +34,12 @@ public interface JsApi {
     // 找图
     String findImage(String templateName, double threshold);
 
+    /** 用设备上的图片文件找图（相对路径默认取应用私有目录）。返回 "x,y" 或 null。 */
+    String findImageFile(String path, double threshold);
+
+    /** 用打包进 APK 的模板找图（路径相对 assets，例如 "templates/btn.png"）。 */
+    String findImageAsset(String assetPath, double threshold);
+
     // 触控
     void click(double x, double y);
 

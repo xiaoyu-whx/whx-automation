@@ -36,6 +36,8 @@ public final class ScriptHost {
             "function findColorRegion(hex,tol,x,y,w,h){return api.findColorRegion(hex,tol,x,y,w,h)}",
             "function findColorAll(hex,tol,max){return api.findColorAll(hex,tol,max)}",
             "function findImage(name,th){return api.findImage(name,th)}",
+            "function findImageFile(p,th){return api.findImageFile(p,th)}",
+            "function findImageAsset(p,th){return api.findImageAsset(p,th)}",
             "function click(x,y){return api.click(x,y)}",
             "function clickHold(x,y,ms){return api.clickHold(x,y,ms)}",
             "function longClick(x,y,ms){return api.longClick(x,y,ms)}",
@@ -57,6 +59,7 @@ public final class ScriptHost {
 
     private final ScreenSource screen;
     private final InputBackend input;
+    private android.content.Context context;
     private final Map<String, int[]> templates = new HashMap<>();
     private final Map<String, int[]> templateSizes = new HashMap<>();
 
@@ -70,6 +73,17 @@ public final class ScriptHost {
     public ScriptHost(ScreenSource screen, InputBackend input) {
         this.screen = screen;
         this.input = input;
+        if (screen instanceof com.whx.automation.capture.HelperScreenSource) {
+            this.context = ((com.whx.automation.capture.HelperScreenSource) screen).context();
+        }
+    }
+
+    /** 读 assets 用（模板资源）。 */
+    public android.content.Context context() {
+        if (context == null) {
+            throw new IllegalStateException("没有 Context，无法读 assets");
+        }
+        return context;
     }
 
     public boolean isRunning() {
