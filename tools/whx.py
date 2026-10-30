@@ -121,20 +121,20 @@ def cmd_ls(args):
     return 0
 
 
-def cmd_run(args):
-    sys.stdout.reconfigure(line_buffering=True)
-    adb = pick_device(Adb(), args.serial)
-    src = args.script
+def do_run(adb: Adb, src: str, timeout: float, wait: bool = True,
+           echo: bool = True) -> int:
+    """推脚本 → 冷启动运行 → 跟日志。返回脚本的成败（0 成功 / 1 失败）。"""
     name = os.path.basename(src)
 
     if not os.path.exists(src):
-        # 允许直接写脚本名（跑设备上已有的）
-        print("本地没有 %s，按设备上的脚本名处理" % src)
+        if echo:
+            print("本地没有 %s，按设备上已有的脚本名处理" % src)
         installed = adb.su("ls /data/data/%s/files/scripts" % APP_ID, check=False)
         if name not in installed.split():
             raise SystemExit("设备上也没有 %s" % name)
     else:
-        print("推送脚本 %s → 设备" % name)
+        if echo:
+            print("推送脚本 %s → 设备" % name)
         adb.sh("push", src, REMOTE_TMP)
         uid = app_uid(adb)
         adb.su("cp %s /data/data/%s/files/scripts/%s" % (REMOTE_TMP, APP_ID, name))
@@ -145,15 +145,76 @@ def cmd_run(args):
     # 冷启动：先 force-stop 再带参数启动。
     # 实测热启动（activity 已在栈顶）时 onNewIntent 那条路会静默不执行，
     # 冷启动可以保证 onCreate 路径必然生效，也让每次运行的状态干净。
-    print("启动界面并运行 %s" % name)
+    if echo:
+        print("启动界面并运行 %s" % name)
     adb.shell("am force-stop %s" % APP_ID, check=False)
     time.sleep(0.4)
     adb.shell("am start -n %s --es script %s --ez run true" % (ACTIVITY, name))
+    if not wait:
+        return 0
+    return follow_log(adb, wait_done=True, timeout=timeout)
+
+
+def cmd_run(args):
+    sys.stdout.reconfigure(line_buffering=True)
+    adb = pick_device(Adb(), args.serial)
+    code = do_run(adb, args.script, args.timeout, wait=not args.no_wait)
     if args.no_wait:
         print("已启动（不等结果）。用 `python tools/whx.py log` 看日志")
-        return 0
+    return code
 
-    return follow_log(adb, wait_done=True, timeout=args.timeout)
+
+def cmd_watch(args):
+    """监听本地脚本变化，保存即推送并运行。
+
+    这是"写脚本"最需要的循环：改一行 → 存盘 → 立刻能看到结果，
+    不用手动 adb push、不用在手机上点运行。
+    """
+    sys.stdout.reconfigure(line_buffering=True)
+    adb = pick_device(Adb(), args.serial)
+    src = args.script
+    if not os.path.exists(src):
+        raise SystemExit("要监听的脚本不存在: %s" % src)
+
+    print("监听 %s（Ctrl-C 退出），改动后自动运行" % src)
+    last_stamp = os.path.getmtime(src)
+    runs = 0
+
+    # 先跑一次，省得改了才看到效果
+    runs += 1
+    print("\n===== 第 1 次运行 %s =====" % time.strftime("%H:%M:%S"))
+    try:
+        do_run(adb, src, args.timeout, echo=False)
+    except Exception as exc:
+        print("运行出错: %s" % exc)
+
+    try:
+        while True:
+            time.sleep(args.interval)
+            try:
+                stamp = os.path.getmtime(src)
+            except OSError:
+                continue
+            if stamp == last_stamp:
+                continue
+            # 编辑器保存常常连续触发多次，等文件稳定
+            stable = stamp
+            for _ in range(10):
+                time.sleep(0.1)
+                now = os.path.getmtime(src)
+                if now == stable:
+                    break
+                stable = now
+            last_stamp = os.path.getmtime(src)
+            runs += 1
+            print("\n===== 第 %d 次运行 %s（检测到改动）=====" % (runs, time.strftime("%H:%M:%S")))
+            try:
+                do_run(adb, src, args.timeout, echo=False)
+            except Exception as exc:
+                print("运行出错: %s" % exc)
+    except KeyboardInterrupt:
+        print("\n已停止监听（共运行 %d 次）" % runs)
+    return 0
 
 
 def follow_log(adb: Adb, wait_done: bool, timeout: float = 120) -> int:
@@ -236,6 +297,7 @@ def cmd_pack(args):
 def main(argv=None) -> int:
     try:
         sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+        sys.stderr.reconfigure(encoding="utf-8", errors="replace")
     except Exception:
         pass
 
@@ -254,6 +316,12 @@ def main(argv=None) -> int:
     sp.add_argument("--no-wait", action="store_true", help="不等结果，立即返回")
     sp.add_argument("--timeout", type=float, default=180, help="等待秒数，默认 180")
     sp.set_defaults(func=cmd_run)
+
+    sp = sub.add_parser("watch", help="监听脚本改动并自动运行")
+    sp.add_argument("script", help="本地脚本路径")
+    sp.add_argument("--interval", type=float, default=0.6, help="轮询间隔秒，默认 0.6")
+    sp.add_argument("--timeout", type=float, default=180)
+    sp.set_defaults(func=cmd_watch)
 
     sp = sub.add_parser("log", help="跟随脚本日志")
     sp.add_argument("--timeout", type=float, default=3600)
