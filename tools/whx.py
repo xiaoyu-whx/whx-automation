@@ -441,6 +441,12 @@ def cmd_pack(args):
            "--label", args.label,
            "--pkg", args.pkg,
            "--out", args.out]
+    if args.icon:
+        cmd += ["--icon", str(args.icon)]
+    if args.config:
+        cmd += ["--config", args.config]
+    if args.assets:
+        cmd += ["--assets", args.assets]
     if args.no_autostart:
         cmd.append("--no-autostart")
     return subprocess.call(cmd)
@@ -508,6 +514,10 @@ def main(argv=None) -> int:
     sp.add_argument("--label", required=True)
     sp.add_argument("--pkg", required=True)
     sp.add_argument("--out", default=None)
+    sp.add_argument("--icon", type=int, default=0, choices=[0, 1, 2, 3, 4],
+                    help="小精灵图标编号 1..4")
+    sp.add_argument("--config", default=None, help="参数文件（键|显示名|类型|默认值）")
+    sp.add_argument("--assets", default=None, help="额外资源目录（模板图片等）")
     sp.add_argument("--no-autostart", action="store_true")
     sp.set_defaults(func=cmd_pack)
 

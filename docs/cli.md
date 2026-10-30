@@ -6,6 +6,11 @@
 ## 命令
 
 ```bash
+python tools/smoke.py               # 端到端冒烟：构建 → 单测 → 安装 → 12 项检查
+```
+
+
+```bash
 python tools/whx.py devices                 # 列设备、确认 root 与分辨率
 python tools/whx.py ls                      # 设备上有哪些脚本
 python tools/whx.py run demo.js             # 推脚本 → 选中 → 运行 → 跟日志直到结束
