@@ -21,6 +21,7 @@ import com.whx.automation.capture.HelperScreenSource;
 import com.whx.automation.core.CoreInfo;
 import com.whx.automation.core.FrameDiff;
 import com.whx.automation.input.HelperInput;
+import com.whx.automation.script.ScriptHost;
 import com.whx.automation.core.vision.Hit;
 import com.whx.automation.core.vision.Point;
 import com.whx.automation.core.vision.Vision;
@@ -44,13 +45,17 @@ public class MainActivity extends Activity {
     private final Handler ui = new Handler(Looper.getMainLooper());
     private TextView status;
     private ImageView preview;
+    private TextView logView;
     private Button serviceButton;
+    private ScriptHost scriptHost;
+    private final java.util.ArrayDeque<String> scriptLog = new java.util.ArrayDeque<>();
     private HelperScreenSource source;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         source = new HelperScreenSource(this);
+        scriptHost = new ScriptHost(source, new HelperInput(this));
 
         LinearLayout root = new LinearLayout(this);
         root.setOrientation(LinearLayout.VERTICAL);
@@ -103,11 +108,32 @@ public class MainActivity extends Activity {
         buttons3.addView(button("滑动", v -> runSwipeTest()), weight());
         root.addView(buttons3);
 
+        LinearLayout buttons4 = new LinearLayout(this);
+        buttons4.setOrientation(LinearLayout.HORIZONTAL);
+        buttons4.setPadding(0, 0, 0, dp(8));
+        buttons4.addView(button("运行脚本", v -> runDemoScript()), weight());
+        buttons4.addView(button("长脚本", v -> runLongScript()), weight());
+        buttons4.addView(button("停止脚本", v -> {
+            scriptHost.stop();
+            appendScriptLog("[stop] 已请求停止");
+        }), weight());
+        root.addView(buttons4);
+
+        // 日志区固定放在按钮下方：之前的写法把日志写进顶部的 status，
+        // 长脚本运行时把按钮一路顶出屏幕，"停止脚本"直接点不到。
+        logView = new TextView(this);
+        logView.setTextSize(12);
+        logView.setTextColor(Color.parseColor("#9ECE6A"));
+        logView.setPadding(0, dp(8), 0, dp(8));
+        logView.setBackgroundColor(Color.parseColor("#0D0F12"));
+        root.addView(logView, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, 0, 1.2f));
+
         preview = new ImageView(this);
         preview.setAdjustViewBounds(true);
         preview.setBackgroundColor(Color.parseColor("#0D0F12"));
         root.addView(preview, new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f));
+                ViewGroup.LayoutParams.MATCH_PARENT, 0, 0.8f));
 
         ScrollView scroll = new ScrollView(this);
         scroll.addView(root);
@@ -221,11 +247,11 @@ public class MainActivity extends Activity {
 
                 final Frame last = frame;
                 ui.post(() -> {
-                    status.setText(buildStatusText() + System.lineSeparator() + System.lineSeparator() + sb);
+                    setOutput(sb);
                     preview.setImageBitmap(toBitmap(last));
                 });
             } catch (Exception e) {
-                ui.post(() -> status.setText(buildStatusText() + System.lineSeparator() + System.lineSeparator() + "[区域截图失败] " + e));
+                ui.post(() -> setOutput("[区域截图失败] " + e));
             }
         }, "region-test").start();
     }
@@ -461,6 +487,97 @@ public class MainActivity extends Activity {
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
         }
+    }
+
+    // ------------------------------------------------------------ 脚本执行
+    /** 示例脚本：验证桥接、截图、取色、找色、点击、休眠全链路。 */
+    private static final String DEMO_SCRIPT = String.join(System.lineSeparator(),
+            "log('脚本开始');",
+            "refresh();",
+            "var w = screenWidth(), h = screenHeight();",
+            "log('屏幕 ' + w + 'x' + h);",
+            "var t0 = Date.now();",
+            "for (var i = 0; i < 1000; i++) { getColor(360, 640); }",
+            "log('1000 次 getColor 桥接耗时 ' + (Date.now() - t0) + ' ms');",
+            "var c = getColor(360, 640);",
+            "log('中心像素 ' + c);",
+            "var pt = findColor(c, 6);",
+            "log('找色结果 ' + pt);",
+            "var xy = pt.split(',');",
+            "click(Number(xy[0]), Number(xy[1]));",
+            "sleep(100);",
+            "log('点击完成');",
+            "'返回值: ' + info()");
+
+    /** 长脚本：用于验证"运行中可停止"。 */
+    private static final String LONG_SCRIPT = String.join(System.lineSeparator(),
+            "refresh();",
+            "log('长脚本开始');",
+            "for (var i = 0; i < 100; i++) {",
+            "  sleep(100);",
+            "  if (i % 10 === 0) { log('进度 ' + i + '/100'); }",
+            "}",
+            "log('长脚本结束');",
+            "'ok'");
+
+    private void runLongScript() {
+        scriptLog.clear();
+        appendScriptLog("[run] 启动长脚本（10 秒）");
+        scriptHost.run(LONG_SCRIPT, "long", new ScriptHost.Listener() {
+            @Override
+            public void onLog(String level, String message) {
+                ui.post(() -> appendScriptLog("[" + level + "] " + message));
+            }
+
+            @Override
+            public void onDone(boolean ok, String error, long costMs) {
+                ui.post(() -> appendScriptLog(String.format("[done] %s  用时 %d ms",
+                        ok ? "成功" : ("失败: " + error), costMs)));
+            }
+        });
+    }
+
+    private void runDemoScript() {
+        scriptLog.clear();
+        appendScriptLog("[run] 启动脚本");
+        boolean started = scriptHost.run(DEMO_SCRIPT, "demo", new ScriptHost.Listener() {
+            @Override
+            public void onLog(String level, String message) {
+                ui.post(() -> appendScriptLog("[" + level + "] " + message));
+            }
+
+            @Override
+            public void onDone(boolean ok, String error, long costMs) {
+                ui.post(() -> appendScriptLog(String.format("[done] %s  用时 %d ms",
+                        ok ? "成功" : ("失败: " + error), costMs)));
+            }
+        });
+        if (!started) {
+            appendScriptLog("[warn] 已有脚本在运行");
+        }
+    }
+
+    /**
+     * 追加脚本日志。
+     *
+     * <p>只保留最近 8 行：日志区不能无限长，否则按钮会被顶出屏幕（实测长脚本时
+     * "停止脚本"按钮直接滚没了，等于跑起来就停不掉）。
+     */
+    /** 把测试/脚本输出显示到固定日志区（不动顶部状态行，按钮位置就不会跳）。 */
+    private void setOutput(CharSequence text) {
+        logView.setText(text);
+    }
+
+    private void appendScriptLog(String line) {
+        scriptLog.addLast(line);
+        while (scriptLog.size() > 8) {
+            scriptLog.removeFirst();
+        }
+        StringBuilder sb = new StringBuilder();
+        for (String l : scriptLog) {
+            sb.append(l).append(System.lineSeparator());
+        }
+        setOutput(sb);
     }
 
     private void toggleService() {
