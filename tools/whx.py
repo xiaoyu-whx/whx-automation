@@ -122,7 +122,8 @@ def cmd_ls(args):
 
 
 def do_run(adb: Adb, src: str, timeout: float, wait: bool = True,
-           echo: bool = True, cold: bool = False, push_only: bool = False) -> int:
+           echo: bool = True, cold: bool = False, push_only: bool = False,
+           config: str = "") -> int:
     """推脚本 → 冷启动运行 → 跟日志。返回脚本的成败（0 成功 / 1 失败）。"""
     name = os.path.basename(src)
 
@@ -157,8 +158,9 @@ def do_run(adb: Adb, src: str, timeout: float, wait: bool = True,
     # 用广播而不是 Activity intent：实测界面不在前台时 am start --es 会静默不执行
     # -f 0x00000020 = FLAG_INCLUDE_STOPPED_PACKAGES：
     # 应用被 force-stop 过会进入 stopped 状态，默认收不到广播（实测卡住无输出）
+    extra = (" --es config '%s'" % config) if config else ""
     adb.shell("am broadcast -a com.whx.automation.RUN_SCRIPT -f 0x00000020 "
-              "-n %s/.RunScriptReceiver --es script %s" % (APP_ID, name))
+              "-n %s/.RunScriptReceiver --es script %s%s" % (APP_ID, name, extra))
     if not wait:
         return 0
     return consume_log(proc, wait_done=True, timeout=timeout)
@@ -170,7 +172,8 @@ def cmd_run(args):
     scripts = args.script if isinstance(args.script, list) else [args.script]
 
     if len(scripts) == 1:
-        return do_run(adb, scripts[0], args.timeout, wait=not args.no_wait, cold=args.cold)
+        return do_run(adb, scripts[0], args.timeout, wait=not args.no_wait, cold=args.cold,
+                      config=",".join(args.config))
 
     # 多脚本 = 任务链：全部推送后再一次性广播，设备端顺序执行
     names = []
@@ -464,6 +467,8 @@ def main(argv=None) -> int:
     sp.add_argument("script", nargs="+",
                     help="本地脚本路径或设备上已有的脚本名；给多个则为任务链（顺序执行）")
     sp.add_argument("--no-wait", action="store_true", help="不等结果，立即返回")
+    sp.add_argument("--config", action="append", default=[], metavar="K=V",
+                    help="运行时配置，可重复：--config x=100 --config y=640")
     sp.add_argument("--cold", action="store_true",
                     help="先 force-stop 再启动（状态干净，但会摘掉无障碍服务）")
     sp.add_argument("--timeout", type=float, default=180, help="等待秒数，默认 180")

@@ -24,6 +24,8 @@ public class RunScriptReceiver extends BroadcastReceiver {
     private static final String TAG = "WHX/RunScript";
     public static final String ACTION_RUN = "com.whx.automation.RUN_SCRIPT";
     public static final String EXTRA_SCRIPT = "script";
+    /** 可选：运行时配置，格式 "key=value,key2=value2"（PC 调试用）。 */
+    public static final String EXTRA_CONFIG = "config";
 
     @Override
     public void onReceive(Context context, Intent intent) {
@@ -37,6 +39,7 @@ public class RunScriptReceiver extends BroadcastReceiver {
         }
         Context app = context.getApplicationContext();
         ScriptStore store = new ScriptStore(app);
+        java.util.Map<String, String> config = parseConfig(intent.getStringExtra(EXTRA_CONFIG));
         try {
             app.startForegroundService(new Intent(app, AutomationService.class));
 
@@ -57,12 +60,28 @@ public class RunScriptReceiver extends BroadcastReceiver {
                         + (started ? "已启动" : "被拒绝（已有任务）"));
             } else {
                 String code = store.load(new ScriptStore.Script(script, ScriptStore.Source.IMPORTED, 0));
-                boolean started = TaskManager.get(app).start(script, code);
+                boolean started = TaskManager.get(app).start(script, code, config);
                 Log.i(TAG, "请求运行 " + script + " → " + (started ? "已启动" : "被拒绝（已有任务）"));
             }
         } catch (Exception e) {
             // 失败要吵：脚本不存在等错误必须落到日志，不能让调用方以为跑起来了
             Log.e(TAG, "运行失败: " + script, e);
         }
+    }
+
+    /** "x=100,y=640" → map。格式错误直接忽略该项，不阻断运行。 */
+    static java.util.Map<String, String> parseConfig(String raw) {
+        java.util.Map<String, String> map = new java.util.HashMap<>();
+        if (raw == null || raw.isEmpty()) {
+            return map;
+        }
+        for (String pair : raw.split(",")) {
+            int eq = pair.indexOf('=');
+            if (eq <= 0) {
+                continue;
+            }
+            map.put(pair.substring(0, eq).trim(), pair.substring(eq + 1).trim());
+        }
+        return map;
     }
 }

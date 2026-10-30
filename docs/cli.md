@@ -137,6 +137,22 @@ chmod 660 /data/data/com.whx.automation/files/scripts/x.js
 
 `whx.py` 里 `app_uid()` 就是干这个的。
 
+## 运行时配置
+
+小精灵的配置项在命令行也能直接传，调试时不用反复打包：
+
+```bash
+python tools/whx.py run config_demo.js --config x=111 --config y=222 --config delay=0
+```
+
+```
+[WHX/Script] [info] x = 111
+[WHX/Script] [info] y = 222
+[WHX/Script] [info] 已按配置点击 111,222
+```
+
+脚本用 `config('x')` 读，键不存在会抛异常并列出可用键。
+
 ## 无障碍开关
 
 脚本要读界面文字（`texts()` / `findText()` / `clickText()`）必须先启用无障碍：
