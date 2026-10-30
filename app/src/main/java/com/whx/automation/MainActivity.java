@@ -143,6 +143,7 @@ public class MainActivity extends Activity implements TaskManager.Observer {
             selected = bundle.scriptName;
             scriptConfig = ScriptConfig.load(this);
             buildConfigUi();
+            com.whx.automation.access.SpriteIcon.activate(this, bundle.icon);
             listBox.setVisibility(android.view.View.GONE);
             listTitle.setVisibility(android.view.View.GONE);
         } else {

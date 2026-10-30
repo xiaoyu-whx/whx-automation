@@ -515,6 +515,18 @@ CLI 不还原就会把多条记录挤成一行 —— 已统一走 `read_pref()`
 **设计取舍**：中途失败就停链，不继续跑后续脚本 ——
 后续步骤通常依赖前一步的结果，硬跑只会把现场搞得更乱。
 
+## 阶段十九 · 小精灵自定义图标（2026-10-31）
+
+| 项 | 实测 |
+| --- | --- |
+| 图标方案 | `activity-alias` × 5（默认 + 4 套图标），运行时只启用一个 |
+| 打包 | `--icon 2` → bundle.json `"icon": 2` |
+| 生效验证 | `图标切换为 sprite2`；`query-activities` 只剩 `com.whx.sprite.icon/com.whx.automation.Sprite2`；桌面显示蓝色 W 图标 |
+| 主应用不受影响 | 仍为 `com.whx.automation/.Launcher`，脚本照常运行（372ms） |
+
+**为什么不用 resources.arsc**：`android:icon` 在二进制清单里是资源 id（int），
+字符串替换无效；activity-alias 让同一份代码拥有多个"外观"，运行时切换最省事。
+
 ## 风险与对策（对齐项目书第十一节）
 
 | 风险 | 我们的实测认知 | 对策 |

@@ -205,6 +205,7 @@ def build_sprite(args) -> str:
         "package": args.pkg,
         "version": args.version,
         "autoStart": not args.no_autostart,
+        "icon": args.icon,
     }, ensure_ascii=False, indent=2)
 
     manifest_bytes = patch_manifest_in_zip(args.shell, {
@@ -313,6 +314,8 @@ def main(argv=None) -> int:
     p.add_argument("--shell-package", default="com.whx.automation", help="壳的包名")
     p.add_argument("--shell-label", default="WHX Automation", help="壳的应用名")
     p.add_argument("--no-autostart", action="store_true", help="打开小精灵后不自动运行")
+    p.add_argument("--icon", type=int, default=0, choices=[0, 1, 2, 3, 4],
+                   help="小精灵图标编号 1..4（壳内置 4 套图标，0=默认）")
     p.add_argument("--assets", default=None,
                    help="额外资源目录（模板图片等），递归拷进 APK 的 assets/ 下，保持相对路径")
     p.add_argument("--config", default=None,

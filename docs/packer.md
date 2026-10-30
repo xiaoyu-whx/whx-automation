@@ -76,6 +76,32 @@ assert build_string_pool(strings, meta["flags"], ...) == raw[8:end]
 }
 ```
 
+## 自定义图标（--icon 1..4）
+
+```bash
+python packer/make_sprite.py ... --icon 2 --out dist/xiaoyu-icon.apk
+```
+
+壳里内置了 4 套图标（绿/蓝/红/紫，白 W），打包时选一个即可。
+
+**为什么不用改 resources.arsc**：清单里 `android:icon` 存的是**资源 id（int）**，
+不是字符串，字符串池替换对它无效。改用 `activity-alias`：
+壳里声明 `.Launcher`（默认）+ `.Sprite1..4` 五个启动入口，各自的图标写在清单里，
+运行时用 `PackageManager.setComponentEnabledSetting` **只启用其中一个**。
+
+实测（`com.whx.sprite.icon`，`--icon 2`）：
+
+```
+WHX/Icon: 图标切换为 sprite2
+桌面查询结果：com.whx.sprite.icon/com.whx.automation.Sprite2   ← 只有这一个入口
+```
+
+桌面截图确认显示蓝色 W 图标 + 名称「小鱼示例」。
+
+**踩坑**：组件类名不能用 `getPackageName()` 拼 —— 包名被改后是 `com.whx.sprite.icon`，
+但清单里的组件是 AGP 按 **namespace** 展开的绝对名 `com.whx.automation.Sprite2`，
+拼错会报 `Component class … does not exist`。
+
 ## 配置项（不写死坐标）
 
 打包时用 `--config` 指定参数文件，小精灵打开后自动生成输入框，脚本用 `config('键')` 读：

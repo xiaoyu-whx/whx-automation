@@ -35,12 +35,16 @@ public final class ScriptStore {
         public final String appName;
         public final String packageName;
         public final boolean autoStart;
+        /** 图标编号 1..4（0 表示用默认图标）。 */
+        public final int icon;
 
-        Bundle(String scriptName, String appName, String packageName, boolean autoStart) {
+        Bundle(String scriptName, String appName, String packageName, boolean autoStart,
+               int icon) {
             this.scriptName = scriptName;
             this.appName = appName;
             this.packageName = packageName;
             this.autoStart = autoStart;
+            this.icon = icon;
         }
     }
 
@@ -89,7 +93,31 @@ public final class ScriptStore {
             String appName = jsonString(json, "appName", "WHX 小精灵");
             String pkg = jsonString(json, "package", "");
             boolean auto = json.contains("\"autoStart\":true") || json.contains("\"autoStart\": true");
-            return new Bundle(script, appName, pkg, auto);
+            int icon = 0;
+            int iconAt = json.indexOf('"' + "icon" + '"');
+            if (iconAt >= 0) {
+                int colon = json.indexOf(':', iconAt);
+                if (colon > 0) {
+                    StringBuilder digits = new StringBuilder();
+                    for (int i = colon + 1; i < json.length(); i++) {
+                        char c = json.charAt(i);
+                        if (c >= '0' && c <= '9') {
+                            digits.append(c);
+                        } else if (digits.length() > 0) {
+                            break;
+                        } else if (!Character.isWhitespace(c)) {
+                            break;
+                        }
+                    }
+                    if (digits.length() > 0) {
+                        try {
+                            icon = Integer.parseInt(digits.toString());
+                        } catch (NumberFormatException ignored) {
+                        }
+                    }
+                }
+            }
+            return new Bundle(script, appName, pkg, auto, icon);
         } catch (IOException e) {
             return null;
         }
