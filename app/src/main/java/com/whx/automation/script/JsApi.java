@@ -53,4 +53,10 @@ public interface JsApi {
     void warn(String msg);
 
     String info();
+
+    /** 读小精灵配置项（assets/bundle/config.txt 里声明的键）。 */
+    String config(String key);
+
+    /** 该配置项是否存在（区分没声明和声明了空值）。 */
+    boolean hasConfig(String key);
 }

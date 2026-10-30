@@ -221,7 +221,7 @@ def build_sprite(args) -> str:
                     zout.writestr(item, manifest_bytes)
                     continue
                 if item.filename.startswith("assets/bundle/"):
-                    continue        # 丢掉旧的绑定
+                    continue        # 丢掉旧的绑定与配置
                 zout.writestr(item, zin.read(item.filename))
 
             zi = zipfile.ZipInfo("assets/bundle/bundle.json")
@@ -230,6 +230,13 @@ def build_sprite(args) -> str:
             zi = zipfile.ZipInfo("assets/bundle/" + script_name)
             zi.compress_type = zipfile.ZIP_DEFLATED
             zout.writestr(zi, script_code)
+
+            if args.config:
+                with open(args.config, "r", encoding="utf-8") as fh:
+                    config_text = fh.read()
+                zi = zipfile.ZipInfo("assets/bundle/config.txt")
+                zi.compress_type = zipfile.ZIP_DEFLATED
+                zout.writestr(zi, config_text)
 
         aligned = os.path.join(tmpdir, "aligned.apk")
         subprocess.run([zipalign, "-f", "-p", "4", unsigned, aligned], check=True,
@@ -282,6 +289,8 @@ def main(argv=None) -> int:
     p.add_argument("--shell-package", default="com.whx.automation", help="壳的包名")
     p.add_argument("--shell-label", default="WHX Automation", help="壳的应用名")
     p.add_argument("--no-autostart", action="store_true", help="打开小精灵后不自动运行")
+    p.add_argument("--config", default=None,
+                   help="配置项文件（键|显示名|类型|默认值），打包进小精灵后自动生成输入框")
     p.add_argument("--android-home", default=os.environ.get("ANDROID_HOME", r"D:\Android\Sdk"))
     p.add_argument("--build-tools", default="34.0.0")
     p.add_argument("--java-home", default=os.environ.get("JAVA_HOME", r"D:\Java\1.JAVA"))

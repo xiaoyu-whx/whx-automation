@@ -44,7 +44,9 @@ public final class ScriptHost {
             "function sleep(ms){return api.sleep(ms)}",
             "function log(m){return api.log(m)}",
             "function warn(m){return api.warn(m)}",
-            "function info(){return api.info()}");
+            "function info(){return api.info()}",
+            "function config(k){return api.config(k)}",
+            "function hasConfig(k){return api.hasConfig(k)}");
 
     /** 脚本结束回调。 */
     public interface Listener {
@@ -62,6 +64,8 @@ public final class ScriptHost {
     private volatile Thread thread;
     private volatile boolean running;
     private Listener listener;
+    private java.util.Map<String, String> config =
+            java.util.Collections.<String, String>emptyMap();
 
     public ScriptHost(ScreenSource screen, InputBackend input) {
         this.screen = screen;
@@ -102,10 +106,17 @@ public final class ScriptHost {
 
     /** 启动脚本。重复调用会被拒绝（同一时刻只跑一个脚本）。 */
     public synchronized boolean run(String script, String name, Listener listener) {
+        return run(script, name, listener, java.util.Collections.<String, String>emptyMap());
+    }
+
+    /** 带配置运行（小精灵把用户填的参数传进来）。 */
+    public synchronized boolean run(String script, String name, Listener listener,
+                                    java.util.Map<String, String> config) {
         if (running) {
             return false;
         }
         this.listener = listener;
+        this.config = config == null ? java.util.Collections.<String, String>emptyMap() : config;
         this.stopRequested = false;
         this.running = true;
 
@@ -127,7 +138,7 @@ public final class ScriptHost {
         String error = null;
         try {
             js = QuickJs.create();
-            ScriptApi api = new ScriptApi(screen, input, this);
+            ScriptApi api = new ScriptApi(screen, input, this, config);
             // QuickJS 只能绑定接口，用动态代理转发到实现类
             js.set("api", JsApi.class, api);
             // 把 api 的常用方法提到全局，脚本里直接写 click(1,2) 而不是 api.click(1,2)

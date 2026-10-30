@@ -1,0 +1,6 @@
+# 键 | 显示名 | 类型 | 默认值
+# 类型：text / number / switch
+x | 点击 X 坐标 | number | 360
+y | 点击 Y 坐标 | number | 640
+delay | 等待秒数 | number | 1
+debug | 打印详细日志 | switch | false

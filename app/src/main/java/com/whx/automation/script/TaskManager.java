@@ -78,6 +78,12 @@ public final class TaskManager {
 
     /** 启动任务；已在运行时返回 false（不排队，先保持简单）。 */
     public synchronized boolean start(String name, String code) {
+        return start(name, code, java.util.Collections.<String, String>emptyMap());
+    }
+
+    /** 带配置启动（小精灵用）。 */
+    public synchronized boolean start(String name, String code,
+                                      java.util.Map<String, String> config) {
         if (state != State.IDLE) {
             return false;
         }
@@ -104,7 +110,7 @@ public final class TaskManager {
                 }
                 Log.i(TAG, "done ok=" + success + " cost=" + costMs + "ms");
             }
-        });
+        }, config);
         if (!ok) {
             state = State.IDLE;
             notifyState();

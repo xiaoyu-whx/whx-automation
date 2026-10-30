@@ -76,6 +76,39 @@ assert build_string_pool(strings, meta["flags"], ...) == raw[8:end]
 }
 ```
 
+## 配置项（不写死坐标）
+
+打包时用 `--config` 指定参数文件，小精灵打开后自动生成输入框，脚本用 `config('键')` 读：
+
+```bash
+python packer/make_sprite.py ... --config packer/sample-config.txt
+```
+
+`config.txt` 一行一个字段，竖线分隔（**顺序稳定、人肉可编辑、无需 JSON 依赖**）：
+
+```
+# 键 | 显示名 | 类型 | 默认值
+x | 点击 X 坐标 | number | 360
+y | 点击 Y 坐标 | number | 640
+delay | 等待秒数 | number | 1
+debug | 打印详细日志 | switch | false
+```
+
+脚本里：
+
+```js
+log('x = ' + config('x'));
+click(Number(config('x')), Number(config('y')));
+if (hasConfig('debug')) { log('开调试'); }
+```
+
+**实测**：生成的界面显示「参数 / 点击 X 坐标 / 点击 Y 坐标 / 等待秒数 / 打印详细日志」四个控件；
+把 X 改成 100 后运行，日志为 `配置: {x=100, y=640, delay=1, debug=false}`，
+脚本按新值点击 `(100,640)`。
+
+**失败要吵**：`config('拼错的键')` 会抛异常并列出可用键，不会静默返回空串；
+数字型字段填了非数字时拒绝运行并提示具体字段名。
+
 ## 已知限制
 
 - **图标还不能换**：`android:icon` 指向资源表，改它要重编 `resources.arsc`，留到后续版本。

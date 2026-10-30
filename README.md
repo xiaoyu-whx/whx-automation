@@ -1,6 +1,6 @@
 # WHX Automation
 
-![tests](https://img.shields.io/badge/tests-38%20passed-brightgreen)
+![tests](https://img.shields.io/badge/tests-48%20passed-brightgreen)
 ![platform](https://img.shields.io/badge/platform-Android%209%2B-3ddc84)
 ![language](https://img.shields.io/badge/language-Java-orange)
 ![engine](https://img.shields.io/badge/JS%20engine-QuickJS-blue)
@@ -9,7 +9,7 @@
 > Android 自动化运行平台：**PC 上开发，Android 上运行，可打包成独立 APK 脱离 PC 执行**。
 > 全部自研，不复刻任何现有工具的实现。
 
-**当前状态：阶段九 完成**（PC 端工具链 `whx` 一条命令跑脚本）。剩余：ARM64 云手机/真机验证。
+**当前状态：阶段十 完成**（小精灵可带配置项，不写死坐标）。剩余：ARM64 云手机/真机验证。
 
 📄 最高依据：[项目书](docs/project-charter.md) —— 本文档集与项目书冲突时，以项目书为准。
 

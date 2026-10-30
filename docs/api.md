@@ -178,3 +178,15 @@ step("登录", () => { click(500, 800); sleep(500); });   // 打点，供轨迹�
 
 接口命名与返回结构已为这些预留：所有识别结果统一为 `{x, y, w, h, center}`，
 所有动作统一接受 `{ hold, duration, ... }` 选项对象。
+
+
+## 配置项（小精灵）
+
+```js
+config(key)        // 读配置值，字符串；键不存在会抛异常并列出可用键
+hasConfig(key)     // 该键是否在 config.txt 中声明
+```
+
+配置项由打包时的 `config.txt` 声明，见 [packer.md](packer.md)。
+
+## 工具

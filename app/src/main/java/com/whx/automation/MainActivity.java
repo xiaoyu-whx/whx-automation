@@ -13,11 +13,13 @@ import android.util.Log;
 import android.view.ViewGroup;
 import android.widget.Button;
 import android.widget.LinearLayout;
-import android.widget.ScrollView;
+import android.widget.EditText;
+import android.widget.Switch;
 import android.widget.TextView;
 
 import com.whx.automation.core.CoreInfo;
 import com.whx.automation.helper.HelperSession;
+import com.whx.automation.script.ScriptConfig;
 import com.whx.automation.script.ScriptStore;
 import com.whx.automation.script.TaskManager;
 
@@ -44,12 +46,16 @@ public class MainActivity extends Activity implements TaskManager.Observer {
 
     private ScriptStore store;
     private ScriptStore.Bundle bundle;
+    private ScriptConfig scriptConfig;
+    private final java.util.LinkedHashMap<String, android.view.View> configInputs =
+            new java.util.LinkedHashMap<>();
     private TaskManager tasks;
 
     private TextView status;
     private TextView logView;
     private LinearLayout listBox;
     private TextView listTitle;
+    private LinearLayout configBox;
     private Button runButton;
     private Button stopButton;
     private String selected = "";
@@ -97,6 +103,11 @@ public class MainActivity extends Activity implements TaskManager.Observer {
         listBox.setOrientation(LinearLayout.VERTICAL);
         root.addView(listBox);
 
+        // 小精灵的配置项：打包者声明参数，这里自动生成输入框，脚本用 config('键') 读
+        configBox = new LinearLayout(this);
+        configBox.setOrientation(LinearLayout.VERTICAL);
+        root.addView(configBox);
+
         LinearLayout actions = new LinearLayout(this);
         actions.setOrientation(LinearLayout.HORIZONTAL);
         actions.setPadding(0, dp(8), 0, dp(8));
@@ -125,6 +136,8 @@ public class MainActivity extends Activity implements TaskManager.Observer {
 
         if (bundle != null) {
             selected = bundle.scriptName;
+            scriptConfig = ScriptConfig.load(this);
+            buildConfigUi();
             listBox.setVisibility(android.view.View.GONE);
             listTitle.setVisibility(android.view.View.GONE);
         } else {
@@ -229,6 +242,60 @@ public class MainActivity extends Activity implements TaskManager.Observer {
         }
     }
 
+    /** 依据 assets/bundle/config.txt 生成输入框。 */
+    private void buildConfigUi() {
+        configInputs.clear();
+        configBox.removeAllViews();
+        if (scriptConfig == null || scriptConfig.isEmpty()) {
+            return;
+        }
+        TextView title = new TextView(this);
+        title.setText("参数");
+        title.setTextColor(Color.parseColor("#C8CDD6"));
+        title.setTextSize(13);
+        configBox.addView(title);
+
+        for (ScriptConfig.Field f : scriptConfig.fields()) {
+            TextView label = new TextView(this);
+            label.setText(f.label);
+            label.setTextColor(Color.parseColor("#9AA3B0"));
+            label.setTextSize(12);
+            configBox.addView(label);
+
+            if (f.type == ScriptConfig.Type.SWITCH) {
+                Switch sw = new Switch(this);
+                sw.setChecked("true".equalsIgnoreCase(f.defaultValue));
+                configInputs.put(f.key, sw);
+                configBox.addView(sw);
+            } else {
+                EditText et = new EditText(this);
+                et.setText(f.defaultValue);
+                et.setTextSize(13);
+                et.setSingleLine(true);
+                if (f.type == ScriptConfig.Type.NUMBER) {
+                    et.setInputType(android.text.InputType.TYPE_CLASS_NUMBER
+                            | android.text.InputType.TYPE_NUMBER_FLAG_DECIMAL
+                            | android.text.InputType.TYPE_NUMBER_FLAG_SIGNED);
+                }
+                configInputs.put(f.key, et);
+                configBox.addView(et);
+            }
+        }
+    }
+
+    /** 把界面上的输入收集进配置对象；返回错误信息或 null。 */
+    private String collectConfig() {
+        for (java.util.Map.Entry<String, android.view.View> e : configInputs.entrySet()) {
+            android.view.View v = e.getValue();
+            if (v instanceof EditText) {
+                scriptConfig.set(e.getKey(), ((EditText) v).getText().toString());
+            } else if (v instanceof Switch) {
+                scriptConfig.set(e.getKey(), ((Switch) v).isChecked() ? "true" : "false");
+            }
+        }
+        return scriptConfig.validate();
+    }
+
     private void runSelected() {
         if (selected.isEmpty()) {
             appendLog("[warn] 没有选中脚本");
@@ -264,7 +331,18 @@ public class MainActivity extends Activity implements TaskManager.Observer {
             // 前台服务：保证切后台/锁屏后任务继续
             Intent svc = new Intent(this, AutomationService.class);
             startForegroundService(svc);
-            boolean started = tasks.start(name, code);
+            java.util.Map<String, String> cfg = null;
+            if (scriptConfig != null && !scriptConfig.isEmpty()) {
+                String invalid = collectConfig();
+                if (invalid != null) {
+                    Log.w(TAG, "配置不合法: " + invalid);
+                    appendLog("[error] " + invalid);
+                    return;
+                }
+                cfg = scriptConfig.snapshot();
+                Log.i(TAG, "配置: " + cfg);
+            }
+            boolean started = tasks.start(name, code, cfg);
             appendLog(started ? "[run] 启动 " + name : "[warn] 启动失败");
             refreshStatus();
         } catch (Exception e) {

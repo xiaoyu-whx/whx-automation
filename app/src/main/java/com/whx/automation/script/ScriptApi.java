@@ -29,11 +29,14 @@ public final class ScriptApi implements JsApi {
     private final ScriptHost host;
 
     private Frame frame;
+    private final java.util.Map<String, String> config;
 
-    public ScriptApi(ScreenSource screen, InputBackend input, ScriptHost host) {
+    public ScriptApi(ScreenSource screen, InputBackend input, ScriptHost host,
+                     java.util.Map<String, String> config) {
         this.screen = screen;
         this.input = input;
         this.host = host;
+        this.config = config == null ? java.util.Collections.<String, String>emptyMap() : config;
     }
 
     // ------------------------------------------------------------------ 帧
@@ -189,6 +192,22 @@ public final class ScriptApi implements JsApi {
 
     public void warn(String msg) {
         host.log("warn", msg);
+    }
+
+    @Override
+    public String config(String key) {
+        String v = config.get(key);
+        if (v == null) {
+            // 失败要吵：键拼错不能悄悄返回空串，否则脚本带着错误参数跑偏
+            throw new IllegalArgumentException("配置项不存在: " + key
+                    + "（可用: " + config.keySet() + "）");
+        }
+        return v;
+    }
+
+    @Override
+    public boolean hasConfig(String key) {
+        return config.containsKey(key);
     }
 
     /** 环境信息，调试用。 */
