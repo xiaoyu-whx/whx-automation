@@ -212,6 +212,20 @@ def build_sprite(args) -> str:
         args.shell_label: args.label,
     })
 
+    # 额外资源先收集成字典：壳里可能已经有同名文件（例如模板），
+    # 直接再写一次会造成 "Multiple ZIP entries with the same name"，apksigner 会拒绝签名
+    extra_assets = {}
+    if args.assets:
+        root = os.path.abspath(args.assets)
+        if not os.path.isdir(root):
+            raise SystemExit("--assets 不是目录: %s" % root)
+        for dirpath, _, filenames in os.walk(root):
+            for fname in filenames:
+                full = os.path.join(dirpath, fname)
+                rel = os.path.relpath(full, root).replace(os.sep, "/")
+                with open(full, "rb") as fh:
+                    extra_assets["assets/" + rel] = fh.read()
+
     tmpdir = tempfile.mkdtemp(prefix="sprite-")
     unsigned = os.path.join(tmpdir, "unsigned.apk")
     try:
@@ -222,6 +236,8 @@ def build_sprite(args) -> str:
                     continue
                 if item.filename.startswith("assets/bundle/"):
                     continue        # 丢掉旧的绑定与配置
+                if item.filename in extra_assets:
+                    continue        # 由 --assets 覆盖
                 zout.writestr(item, zin.read(item.filename))
 
             zi = zipfile.ZipInfo("assets/bundle/bundle.json")
@@ -230,6 +246,13 @@ def build_sprite(args) -> str:
             zi = zipfile.ZipInfo("assets/bundle/" + script_name)
             zi.compress_type = zipfile.ZIP_DEFLATED
             zout.writestr(zi, script_code)
+
+            for name, data in extra_assets.items():
+                zi = zipfile.ZipInfo(name)
+                zi.compress_type = zipfile.ZIP_DEFLATED
+                zout.writestr(zi, data)
+            if extra_assets:
+                print("已打入资源 %d 个" % len(extra_assets))
 
             if args.config:
                 with open(args.config, "r", encoding="utf-8") as fh:
@@ -290,6 +313,8 @@ def main(argv=None) -> int:
     p.add_argument("--shell-package", default="com.whx.automation", help="壳的包名")
     p.add_argument("--shell-label", default="WHX Automation", help="壳的应用名")
     p.add_argument("--no-autostart", action="store_true", help="打开小精灵后不自动运行")
+    p.add_argument("--assets", default=None,
+                   help="额外资源目录（模板图片等），递归拷进 APK 的 assets/ 下，保持相对路径")
     p.add_argument("--config", default=None,
                    help="配置项文件（键|显示名|类型|默认值），打包进小精灵后自动生成输入框")
     p.add_argument("--android-home", default=os.environ.get("ANDROID_HOME", r"D:\Android\Sdk"))

@@ -109,6 +109,30 @@ if (hasConfig('debug')) { log('开调试'); }
 **失败要吵**：`config('拼错的键')` 会抛异常并列出可用键，不会静默返回空串；
 数字型字段填了非数字时拒绝运行并提示具体字段名。
 
+## 打包模板图片（--assets）
+
+找图要模板，模板得跟着小精灵走：
+
+```bash
+python packer/make_sprite.py ...     --assets dist/tpl_assets --out dist/xiaoyu-img.apk
+```
+
+`--assets` 目录会被**递归**拷进 APK 的 `assets/` 下并保持相对路径，
+脚本里就能 `findImageAsset('templates/title.png', 0.9)`。
+
+**工作流**（踩过坑，顺序不能错）：
+
+```bash
+python tools/whx.py shot dist/sprite.png                                  # 1. 截当前小精灵界面
+python tools/vision_cli.py --shot dist/sprite.png crop     --region 30,140,400,70 --out dist/tpl_assets/templates/title.png      # 2. 裁模板
+python tools/vision_cli.py --shot dist/sprite.png template     --tpl dist/tpl_assets/templates/title.png                             # 3. 先验证能命中
+python packer/make_sprite.py ... --assets dist/tpl_assets                 # 4. 打包
+```
+
+> 实测教训：我第一次用的是**开发包界面**截的模板，装进小精灵后匹配失败 ——
+> 因为小精灵的标题是它自己的名字，像素根本不一样。
+> **模板必须从"将要匹配的那个界面"上裁。**
+
 ## 失败自动重试
 
 配置里声明 `retry` 就能让脚本失败后自动重跑（无人值守场景很关键）：
@@ -119,6 +143,17 @@ retry | 失败重试次数 | number | 2
 
 实测 `retry=2`：共 3 次尝试（初始 + 2 次重试），间隔 2 秒，日志逐次提示剩余次数。
 样例见 `packer/sample-retry-config.txt`。
+
+## 坑：重复 ZIP 条目导致签名失败
+
+`--assets` 里的文件如果壳 APK 里已经有了（例如 `assets/templates/title.png`），
+直接再写一次会让 zip 出现同名条目，apksigner 直接拒绝：
+
+```
+ApkFormatException: Multiple ZIP entries with the same name: assets/templates/title.png
+```
+
+处理方式：先把 `--assets` 收集成字典，拷壳时**跳过将被覆盖的条目**，最后统一写入。
 
 ## 已知限制
 
