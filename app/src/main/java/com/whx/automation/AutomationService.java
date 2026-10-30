@@ -3,11 +3,16 @@ package com.whx.automation;
 import android.app.Notification;
 import android.app.NotificationChannel;
 import android.app.NotificationManager;
+import android.app.PendingIntent;
 import android.app.Service;
 import android.content.Intent;
 import android.os.Build;
+import android.os.Handler;
 import android.os.IBinder;
+import android.os.Looper;
 import android.util.Log;
+
+import com.whx.automation.script.TaskManager;
 
 /**
  * 前台服务：保证脚本运行不被系统回收（项目书 §2.2 "后台运行与服务管理"）。
@@ -22,6 +27,9 @@ public class AutomationService extends Service {
 
     private static volatile boolean running = false;
 
+    private final Handler ticker = new Handler(Looper.getMainLooper());
+    private NotificationManager nm;
+
     public static boolean isRunning() {
         return running;
     }
@@ -33,6 +41,18 @@ public class AutomationService extends Service {
         createChannel();
         startForeground(NOTIFY_ID, buildNotification());
         Log.i(TAG, "service created, pid=" + android.os.Process.myPid());
+        // 每秒刷新通知上的任务状态；任务结束后自动停服务
+        ticker.postDelayed(new Runnable() {
+            @Override
+            public void run() {
+                updateNotification();
+                if (TaskManager.get(AutomationService.this).state() == TaskManager.State.IDLE) {
+                    stopSelf();
+                    return;
+                }
+                ticker.postDelayed(this, 1000);
+            }
+        }, 1000);
     }
 
     @Override
@@ -44,6 +64,7 @@ public class AutomationService extends Service {
     @Override
     public void onDestroy() {
         running = false;
+        ticker.removeCallbacksAndMessages(null);
         Log.i(TAG, "service destroyed");
         super.onDestroy();
     }
@@ -51,6 +72,15 @@ public class AutomationService extends Service {
     @Override
     public IBinder onBind(Intent intent) {
         return null;
+    }
+
+    private void updateNotification() {
+        if (nm == null) {
+            nm = getSystemService(NotificationManager.class);
+        }
+        if (nm != null) {
+            nm.notify(NOTIFY_ID, buildNotification());
+        }
     }
 
     private void createChannel() {
@@ -64,13 +94,36 @@ public class AutomationService extends Service {
     }
 
     private Notification buildNotification() {
+        TaskManager tm = TaskManager.get(this);
+        String text;
+        switch (tm.state()) {
+            case RUNNING:
+                text = "运行中 · " + tm.scriptName() + " · " + (tm.elapsedMs() / 1000) + "s";
+                break;
+            case STOPPING:
+                text = "停止中 · " + tm.scriptName();
+                break;
+            default:
+                text = "空闲";
+                break;
+        }
+
+        Intent stop = new Intent(this, TaskStopReceiver.class);
+        stop.setAction(TaskStopReceiver.ACTION_STOP);
+        PendingIntent stopPi = PendingIntent.getBroadcast(this, 1, stop,
+                PendingIntent.FLAG_UPDATE_CURRENT);
+
         Notification.Builder b = (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O)
                 ? new Notification.Builder(this, CHANNEL_ID)
                 : new Notification.Builder(this);
-        return b.setContentTitle("WHX Automation")
-                .setContentText("运行中")
+        b.setContentTitle("WHX Automation")
+                .setContentText(text)
                 .setSmallIcon(android.R.drawable.stat_notify_sync)
-                .setOngoing(true)
-                .build();
+                .setOngoing(true);
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.JELLY_BEAN) {
+            b.addAction(new Notification.Action.Builder(
+                    android.R.drawable.ic_menu_close_clear_cancel, "停止", stopPi).build());
+        }
+        return b.build();
     }
 }

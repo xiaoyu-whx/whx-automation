@@ -30,6 +30,14 @@
             android:exported="false"
             android:foregroundServiceType="dataSync" />
 
+        <receiver
+            android:name=".TaskStopReceiver"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="com.whx.automation.STOP_TASK" />
+            </intent-filter>
+        </receiver>
+
     </application>
 
 </manifest>
