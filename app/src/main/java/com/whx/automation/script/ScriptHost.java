@@ -39,6 +39,7 @@ public final class ScriptHost {
             "function findImageFile(p,th){return api.findImageFile(p,th)}",
             "function findImageAsset(p,th){return api.findImageAsset(p,th)}",
             "function findImageAssetRegion(p,th,x,y,w,h){return api.findImageAssetRegion(p,th,x,y,w,h)}",
+            "function findImageAuto(p,th){return api.findImageAuto(p,th)}",
             "function click(x,y){return api.click(x,y)}",
             "function clickHold(x,y,ms){return api.clickHold(x,y,ms)}",
             "function longClick(x,y,ms){return api.longClick(x,y,ms)}",

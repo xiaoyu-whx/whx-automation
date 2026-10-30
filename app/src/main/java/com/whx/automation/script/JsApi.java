@@ -44,6 +44,14 @@ public interface JsApi {
     String findImageAsset(String assetPath, double threshold);
 
     /** 在指定区域里用 assets 模板找图。 */
+    /**
+     * 缩放无关的找图：先按原尺寸找，失败则按比例缩放模板再试。
+     *
+     * <p>解决"模板在 720p 抓的，换到 1080p 设备就找不到"这个现实问题。
+     * 返回 "x,y"（命中区域中心），找不到 null。
+     */
+    String findImageAuto(String assetPath, double threshold);
+
     String findImageAssetRegion(String assetPath, double threshold,
                                double rx, double ry, double rw, double rh);
 

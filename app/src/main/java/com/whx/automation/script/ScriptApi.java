@@ -139,6 +139,68 @@ public final class ScriptApi implements JsApi {
         return hit == null ? null : hit.center().x + "," + hit.center().y;
     }
 
+    /** 缩放梯度：先原图，再按常见比例放大/缩小。 */
+    private static final double[] SCALES = {1.0, 1.5, 0.75, 2.0, 1.33, 0.5};
+
+    @Override
+    public String findImageAuto(String assetPath, double threshold) {
+        host.checkStop();
+        android.graphics.Bitmap src;
+        try (java.io.InputStream in = host.context().getAssets().open(assetPath)) {
+            src = android.graphics.BitmapFactory.decodeStream(in);
+        } catch (java.io.IOException e) {
+            host.log("error", "模板资源不存在: " + assetPath);
+            throw new IllegalArgumentException("模板资源不存在: " + assetPath, e);
+        }
+        if (src == null) {
+            host.log("error", "模板资源不是有效图片: " + assetPath);
+            throw new IllegalArgumentException("模板资源不是有效图片: " + assetPath);
+        }
+        // 缩放过的模板不可能拿满分：重采样差异会把 NCC 压到 0.85 左右（实测 1.5× 时 0.853），
+        // 所以缩放匹配用更宽松的有效阈值，并把这层"折扣"写进日志。
+        double bestScore = -1;
+        double bestScale = 1.0;
+        try {
+            for (double scale : SCALES) {
+                int w = (int) Math.round(src.getWidth() * scale);
+                int h = (int) Math.round(src.getHeight() * scale);
+                if (w < 8 || h < 8 || w > frame().width || h > frame().height) {
+                    continue;
+                }
+                android.graphics.Bitmap scaled = (scale == 1.0)
+                        ? src
+                        : android.graphics.Bitmap.createScaledBitmap(src, w, h, true);
+                try {
+                    int[] pixels = new int[w * h];
+                    scaled.getPixels(pixels, 0, w, 0, 0, w, h);
+                    double effective = (scale == 1.0) ? threshold : Math.min(threshold, 0.85);
+                    com.whx.automation.core.vision.Hit hit =
+                            Vision.findImage(frame(), pixels, w, h, Math.max(0.3, effective), null);
+                    if (hit != null && hit.score >= effective) {
+                        host.log("info", String.format(java.util.Locale.US,
+                                "找图命中（缩放 %.2f，模板 %dx%d → %dx%d）得分 %.3f，有效阈值 %.2f",
+                                scale, src.getWidth(), src.getHeight(), w, h, hit.score, effective));
+                        return hit.center().x + "," + hit.center().y;
+                    }
+                    if (hit != null && hit.score > bestScore) {
+                        bestScore = hit.score;
+                        bestScale = scale;
+                    }
+                } finally {
+                    if (scaled != src) {
+                        scaled.recycle();
+                    }
+                }
+            }
+            host.log("warn", String.format(java.util.Locale.US,
+                    "各缩放都没达到阈值 %.2f，最高分 %.3f（缩放 %.2f）", threshold,
+                    bestScore, bestScale));
+            return null;
+        } finally {
+            src.recycle();
+        }
+    }
+
     @Override
     public String findImageAssetRegion(String assetPath, double threshold,
                                        double rx, double ry, double rw, double rh) {
