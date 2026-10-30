@@ -24,7 +24,24 @@ import java.util.List;
 public final class ScriptStore {
 
     public enum Source {
-        BUILTIN, IMPORTED
+        BUILTIN, IMPORTED,
+        /** 打包进小精灵的绑定脚本（assets/bundle）。 */
+        BUNDLE
+    }
+
+    /** 小精灵模式下的绑定信息。 */
+    public static final class Bundle {
+        public final String scriptName;
+        public final String appName;
+        public final String packageName;
+        public final boolean autoStart;
+
+        Bundle(String scriptName, String appName, String packageName, boolean autoStart) {
+            this.scriptName = scriptName;
+            this.appName = appName;
+            this.packageName = packageName;
+            this.autoStart = autoStart;
+        }
     }
 
     public static final class Script {
@@ -57,6 +74,40 @@ public final class ScriptStore {
             throw new IllegalStateException("无法创建脚本目录: " + dir);
         }
         return dir;
+    }
+
+    /**
+     * 读小精灵的绑定信息。
+     *
+     * <p>打包器会在 APK 的 {@code assets/bundle/bundle.json} 写入绑定配置，
+     * 存在即表示"这是一个小精灵"，界面应当直接跑这一个脚本，不显示脚本列表。
+     */
+    public Bundle bundle() {
+        try (InputStream in = context.getAssets().open("bundle/bundle.json")) {
+            String json = readAll(in);
+            String script = jsonString(json, "script", "main.js");
+            String appName = jsonString(json, "appName", "WHX 小精灵");
+            String pkg = jsonString(json, "package", "");
+            boolean auto = json.contains("\"autoStart\":true") || json.contains("\"autoStart\": true");
+            return new Bundle(script, appName, pkg, auto);
+        } catch (IOException e) {
+            return null;
+        }
+    }
+
+    /** 读绑定脚本源码。 */
+    public String loadBundleScript(String name) throws IOException {
+        try (InputStream in = context.getAssets().open("bundle/" + name)) {
+            return readAll(in);
+        }
+    }
+
+    /** 极简 JSON 取值：只处理扁平的 {"k":"v"}，够用且不引依赖。 */
+    private static String jsonString(String json, String key, String fallback) {
+        java.util.regex.Matcher m = java.util.regex.Pattern
+                .compile("\"" + key + "\"\s*:\s*\"([^\"]*)\"")
+                .matcher(json);
+        return m.find() ? m.group(1) : fallback;
     }
 
     /** 列出全部脚本：内置在前，导入在后。 */

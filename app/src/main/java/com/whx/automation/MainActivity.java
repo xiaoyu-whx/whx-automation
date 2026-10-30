@@ -39,11 +39,13 @@ public class MainActivity extends Activity implements TaskManager.Observer {
     private final java.util.ArrayDeque<String> logLines = new java.util.ArrayDeque<>();
 
     private ScriptStore store;
+    private ScriptStore.Bundle bundle;
     private TaskManager tasks;
 
     private TextView status;
     private TextView logView;
     private LinearLayout listBox;
+    private TextView listTitle;
     private Button runButton;
     private Button stopButton;
     private String selected = "";
@@ -52,6 +54,7 @@ public class MainActivity extends Activity implements TaskManager.Observer {
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         store = new ScriptStore(this);
+        bundle = store.bundle();
         tasks = TaskManager.get(this);
         tasks.addObserver(this);
 
@@ -61,13 +64,14 @@ public class MainActivity extends Activity implements TaskManager.Observer {
         root.setBackgroundColor(Color.parseColor("#14161A"));
 
         TextView title = new TextView(this);
-        title.setText("WHX Automation");
+        title.setText(bundle != null ? bundle.appName : "WHX Automation");
         title.setTextSize(22);
         title.setTextColor(Color.parseColor("#E6E8EB"));
         root.addView(title);
 
         TextView sub = new TextView(this);
-        sub.setText("阶段六 · APK 整合");
+        sub.setText(bundle != null ? "小精灵模式 · 绑定脚本 " + bundle.scriptName
+                : "阶段六 · APK 整合");
         sub.setTextSize(12);
         sub.setTextColor(Color.parseColor("#8B93A1"));
         root.addView(sub);
@@ -79,7 +83,7 @@ public class MainActivity extends Activity implements TaskManager.Observer {
         status.setPadding(0, dp(8), 0, dp(8));
         root.addView(status);
 
-        TextView listTitle = new TextView(this);
+        listTitle = new TextView(this);
         listTitle.setText("脚本");
         listTitle.setTextColor(Color.parseColor("#C8CDD6"));
         listTitle.setTextSize(13);
@@ -115,8 +119,19 @@ public class MainActivity extends Activity implements TaskManager.Observer {
         // 日志区会塌成一条缝（实测）。
         setContentView(root);
 
-        refreshScripts();
-        TaskManager.get(this).addObserver(this);
+        if (bundle != null) {
+            selected = bundle.scriptName;
+            listBox.setVisibility(android.view.View.GONE);
+            listTitle.setVisibility(android.view.View.GONE);
+        } else {
+            refreshScripts();
+        }
+        tasks.addObserver(this);
+
+        if (bundle != null && bundle.autoStart) {
+            // 小精灵：打开即跑
+            ui.postDelayed(this::runSelected, 600);
+        }
     }
 
     @Override
@@ -176,24 +191,32 @@ public class MainActivity extends Activity implements TaskManager.Observer {
             appendLog("[warn] 已有任务在运行");
             return;
         }
-        ScriptStore.Script target = null;
-        for (ScriptStore.Script s : store.list()) {
-            if (s.name.equals(selected)) {
-                target = s;
-                break;
-            }
-        }
-        if (target == null) {
-            appendLog("[error] 脚本不存在: " + selected);
-            return;
-        }
         try {
-            String code = store.load(target);
+            String code;
+            String name;
+            if (bundle != null) {
+                name = bundle.scriptName;
+                code = store.loadBundleScript(name);
+            } else {
+                ScriptStore.Script target = null;
+                for (ScriptStore.Script s : store.list()) {
+                    if (s.name.equals(selected)) {
+                        target = s;
+                        break;
+                    }
+                }
+                if (target == null) {
+                    appendLog("[error] 脚本不存在: " + selected);
+                    return;
+                }
+                name = target.name;
+                code = store.load(target);
+            }
             // 前台服务：保证切后台/锁屏后任务继续
             Intent svc = new Intent(this, AutomationService.class);
             startForegroundService(svc);
-            boolean started = tasks.start(target.name, code);
-            appendLog(started ? "[run] 启动 " + target.name : "[warn] 启动失败");
+            boolean started = tasks.start(name, code);
+            appendLog(started ? "[run] 启动 " + name : "[warn] 启动失败");
             refreshStatus();
         } catch (Exception e) {
             Log.e(TAG, "读取脚本失败", e);
