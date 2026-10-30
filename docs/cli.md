@@ -117,6 +117,19 @@ chmod 660 /data/data/com.whx.automation/files/scripts/x.js
 
 `whx.py` 里 `app_uid()` 就是干这个的。
 
+## 无障碍开关
+
+脚本要读界面文字（`texts()` / `findText()` / `clickText()`）必须先启用无障碍：
+
+```bash
+python tools/whx.py ui enable     # 用 root 写 secure 设置，无需手点
+python tools/whx.py ui            # 查看状态
+python tools/whx.py ui disable
+```
+
+> 注意：`whx run --cold` 会 force-stop 应用，无障碍服务会被系统摘掉，
+> 需要重新 `ui enable`。默认（非冷启动）不受影响。
+
 ## 定时任务
 
 ```bash

@@ -48,7 +48,11 @@ public final class ScriptHost {
             "function warn(m){return api.warn(m)}",
             "function info(){return api.info()}",
             "function config(k){return api.config(k)}",
-            "function hasConfig(k){return api.hasConfig(k)}");
+            "function hasConfig(k){return api.hasConfig(k)}",
+            "function texts(){return api.texts()}",
+            "function findText(t,exact){return api.findText(t,exact)}",
+            "function clickText(t,exact){return api.clickText(t,exact)}",
+            "function uiReady(){return api.uiReady()}");
 
     /** 脚本结束回调。 */
     public interface Listener {

@@ -483,6 +483,25 @@ debug 壳不能分发：无签名保护、无 R8 优化。本阶段补上 releas
 **坑**：SharedPreferences 的 XML 把换行写成 `&#10;` 实体，
 CLI 不还原就会把多条记录挤成一行 —— 已统一走 `read_pref()` 还原实体。
 
+## 阶段十七 · 界面文本（无障碍）（2026-10-31）
+
+真实脚本里"找到『确定』并点击"比找色常用得多。接入无障碍后可以直接按文字定位。
+
+| 能力 | 实测 |
+| --- | --- |
+| `uiReady()` | 启用后 true，未启用时脚本明确报错并提示去开启 |
+| `texts()` | 系统设置界面读出 17 个文本节点（含坐标与尺寸） |
+| `findText('设置', false)` | → `256,127` |
+| `clickText('电池', false)` | 点击 `176,393` 后 Activity 从 `Settings` 变为 `Settings$PowerUsageSummaryActivity` |
+| 执行耗时 | 4~7ms（纯节点遍历，比截图快一个量级） |
+
+**架构调整（重要）**：PC 驱动脚本改成**广播**（`RUN_SCRIPT`），不再走 Activity intent。
+实测 Activity 不在前台/已在栈顶时，`am start --es` 只是投递意图，
+`onNewIntent` 可能很晚才调用甚至收不到，表现为"脚本没跑且无任何日志"。
+顺带解决两个坑：
+- 应用被 force-stop 后处于 stopped 状态，广播需带 `FLAG_INCLUDE_STOPPED_PACKAGES`；
+- 脚本可能几毫秒就跑完，CLI 必须**先挂 logcat 再发广播**，否则日志全丢。
+
 ## 风险与对策（对齐项目书第十一节）
 
 | 风险 | 我们的实测认知 | 对策 |

@@ -59,6 +59,11 @@ public class MainActivity extends Activity implements TaskManager.Observer {
     private Button runButton;
     private Button stopButton;
     private String selected = "";
+    /** 待运行请求：由 PC 工具链的 intent 设置，在 onResume 里真正执行。
+     *  放在 onResume 而不是 onCreate/onNewIntent，是因为热启动时 onNewIntent
+     *  实测会静默不执行；onResume 一定会被调用，行为稳定。 */
+    private String pendingScript;
+    private boolean pendingAutoRun;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -182,14 +187,21 @@ public class MainActivity extends Activity implements TaskManager.Observer {
         selected = name;
         refreshScripts();
         appendLog("[intent] 指定脚本 " + name);
-        if (intent.getBooleanExtra(EXTRA_AUTORUN, false)) {
-            ui.postDelayed(this::runSelected, 400);
-        }
+        pendingScript = name;
+        pendingAutoRun = intent.getBooleanExtra(EXTRA_AUTORUN, false);
     }
 
     @Override
     protected void onResume() {
         super.onResume();
+        if (pendingScript != null && pendingAutoRun) {
+            boolean run = pendingAutoRun;
+            pendingScript = null;
+            pendingAutoRun = false;
+            if (run) {
+                ui.postDelayed(this::runSelected, 500);
+            }
+        }
         new Thread(() -> {
             // 首次会触发一次 su 授权（已授权则瞬间完成），让"root 状态"如实反映
             try {

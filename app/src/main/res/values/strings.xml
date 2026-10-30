@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">WHX Automation</string>
+    <string name="a11y_description">读取界面文字，供自动化脚本定位控件（例如查找并点击「确定」）</string>
+</resources>

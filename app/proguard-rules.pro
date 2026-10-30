@@ -17,3 +17,6 @@
 -keep class com.whx.automation.TaskStopReceiver { *; }
 -keep class com.whx.automation.schedule.** { *; }
 -keep class com.whx.automation.MainActivity { *; }
+
+# 无障碍服务由系统按类名绑定
+-keep class com.whx.automation.access.** { *; }

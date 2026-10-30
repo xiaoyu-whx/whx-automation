@@ -122,7 +122,7 @@ def cmd_ls(args):
 
 
 def do_run(adb: Adb, src: str, timeout: float, wait: bool = True,
-           echo: bool = True) -> int:
+           echo: bool = True, cold: bool = False) -> int:
     """推脚本 → 冷启动运行 → 跟日志。返回脚本的成败（0 成功 / 1 失败）。"""
     name = os.path.basename(src)
 
@@ -146,19 +146,27 @@ def do_run(adb: Adb, src: str, timeout: float, wait: bool = True,
     # 实测热启动（activity 已在栈顶）时 onNewIntent 那条路会静默不执行，
     # 冷启动可以保证 onCreate 路径必然生效，也让每次运行的状态干净。
     if echo:
-        print("启动界面并运行 %s" % name)
-    adb.shell("am force-stop %s" % APP_ID, check=False)
-    time.sleep(0.4)
-    adb.shell("am start -n %s --es script %s --ez run true" % (ACTIVITY, name))
+        print("运行 %s" % name)
+    proc = start_logcat(adb) if wait else None
+    if cold:
+        # 冷启动只在需要"干净状态"时用：会杀掉进程，无障碍服务会被系统摘掉
+        adb.shell("am force-stop %s" % APP_ID, check=False)
+        time.sleep(0.4)
+    # 用广播而不是 Activity intent：实测界面不在前台时 am start --es 会静默不执行
+    # -f 0x00000020 = FLAG_INCLUDE_STOPPED_PACKAGES：
+    # 应用被 force-stop 过会进入 stopped 状态，默认收不到广播（实测卡住无输出）
+    adb.shell("am broadcast -a com.whx.automation.RUN_SCRIPT -f 0x00000020 "
+              "-n %s/.RunScriptReceiver --es script %s" % (APP_ID, name))
     if not wait:
         return 0
-    return follow_log(adb, wait_done=True, timeout=timeout)
+    return consume_log(proc, wait_done=True, timeout=timeout)
 
 
 def cmd_run(args):
     sys.stdout.reconfigure(line_buffering=True)
     adb = pick_device(Adb(), args.serial)
-    code = do_run(adb, args.script, args.timeout, wait=not args.no_wait)
+    code = do_run(adb, args.script, args.timeout, wait=not args.no_wait,
+                  cold=args.cold)
     if args.no_wait:
         print("已启动（不等结果）。用 `python tools/whx.py log` 看日志")
     return code
@@ -217,10 +225,14 @@ def cmd_watch(args):
     return 0
 
 
-def follow_log(adb: Adb, wait_done: bool, timeout: float = 120) -> int:
+def start_logcat(adb: Adb):
+    """先挂上日志，再触发动作 —— 否则脚本可能几毫秒就跑完，日志还没接上（实测踩过）。"""
     cmd = adb._base() + ["logcat", "-T", "1"] + sum([["-s", t] for t in LOG_TAGS], [])
-    proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
+    return subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
                             encoding="utf-8", errors="replace")
+
+
+def consume_log(proc, wait_done: bool, timeout: float = 120) -> int:
     started = time.time()
     failed = False
     try:
@@ -233,7 +245,7 @@ def follow_log(adb: Adb, wait_done: bool, timeout: float = 120) -> int:
             print(clean_log(line))
             if "E WHX/Script" in line:
                 failed = True
-            if DONE_MARK in line:
+            if wait_done and DONE_MARK in line:
                 break
             if time.time() - started > timeout:
                 print("（超时 %.0f 秒，停止跟随；任务可能还在跑）" % timeout)
@@ -245,15 +257,19 @@ def follow_log(adb: Adb, wait_done: bool, timeout: float = 120) -> int:
     return 1 if failed else 0
 
 
+def follow_log(adb: Adb, wait_done: bool, timeout: float = 120) -> int:
+    return consume_log(start_logcat(adb), wait_done, timeout)
+
+
 def noisy_stack_frame(line: str) -> bool:
     """丢掉 Java 栈帧，只留 JS 行号。
 
     完整栈在 logcat 里还能查到；命令行只显示对脚本作者有用的那一层，
     否则一个 JS 报错会刷十几行 java.lang.Thread.run。
     """
-    if '\t' + 'at ' not in line:
+    if chr(9) + "at " not in line:
         return False
-    return 'at JavaScript' not in line
+    return "at JavaScript" not in line
 
 
 def clean_log(line: str) -> str:
@@ -304,7 +320,7 @@ def cmd_schedule(args):
 
     if args.action == "add":
         hh, mm = args.time.split(":")
-        adb.shell("am broadcast -a com.whx.automation.SCHEDULE_ADD -n %s "
+        adb.shell("am broadcast -a com.whx.automation.SCHEDULE_ADD -f 0x00000020 -n %s "
                   "--es script %s --ei hour %d --ei minute %d"
                   % (receiver, os.path.basename(args.script), int(hh), int(mm)))
         print("已添加：每天 %s 运行 %s" % (args.time, os.path.basename(args.script)))
@@ -312,7 +328,8 @@ def cmd_schedule(args):
         return 0
 
     if args.action == "remove":
-        adb.shell("am broadcast -a com.whx.automation.SCHEDULE_REMOVE -n %s --es script %s"
+        adb.shell("am broadcast -a com.whx.automation.SCHEDULE_REMOVE -f 0x00000020 "
+                  "-n %s --es script %s"
                   % (receiver, os.path.basename(args.script)))
         print("已删除与 %s 相关的计划" % os.path.basename(args.script))
         return 0
@@ -334,6 +351,41 @@ def cmd_schedule(args):
         parts = line.split("|")
         if len(parts) == 3:
             print("  %s:%s  %s" % (parts[1], parts[2], parts[0]))
+    return 0
+
+
+A11Y_SERVICE = APP_ID + "/com.whx.automation.access.WhxAccessibilityService"
+
+
+def cmd_ui(args):
+    """无障碍服务开关：脚本读界面文字的前提。"""
+    adb = pick_device(Adb(), args.serial)
+    if args.action == "enable":
+        current = adb.shell("settings get secure enabled_accessibility_services",
+                            check=False).strip()
+        services = [s.strip() for s in current.split(":") if s.strip()]
+        if A11Y_SERVICE not in services:
+            services.append(A11Y_SERVICE)
+        adb.su("settings put secure enabled_accessibility_services '%s'" % ":".join(services))
+        adb.su("settings put secure accessibility_enabled 1")
+        print("已启用无障碍服务（脚本里可用 texts() / findText() / clickText()）")
+        return 0
+    if args.action == "disable":
+        current = adb.shell("settings get secure enabled_accessibility_services",
+                            check=False).strip()
+        services = [s.strip() for s in current.split(":") if s.strip() and s.strip() != A11Y_SERVICE]
+        if services:
+            adb.su("settings put secure enabled_accessibility_services '%s'" % ":".join(services))
+        else:
+            adb.su("settings delete secure enabled_accessibility_services")
+        print("已关闭无障碍服务")
+        return 0
+    # status
+    current = adb.shell("settings get secure enabled_accessibility_services",
+                        check=False).strip()
+    enabled = A11Y_SERVICE in current
+    print("无障碍服务: %s" % ("已启用" if enabled else "未启用"))
+    print("（启用：python tools/whx.py ui enable）")
     return 0
 
 
@@ -390,6 +442,8 @@ def main(argv=None) -> int:
     sp = sub.add_parser("run", help="推送并运行脚本")
     sp.add_argument("script", help="本地脚本路径，或设备上已有的脚本名")
     sp.add_argument("--no-wait", action="store_true", help="不等结果，立即返回")
+    sp.add_argument("--cold", action="store_true",
+                    help="先 force-stop 再启动（状态干净，但会摘掉无障碍服务）")
     sp.add_argument("--timeout", type=float, default=180, help="等待秒数，默认 180")
     sp.set_defaults(func=cmd_run)
 
@@ -412,6 +466,10 @@ def main(argv=None) -> int:
     sp.add_argument("script", nargs="?", default="", help="脚本名")
     sp.add_argument("--time", default="08:00", help="HH:mm，默认 08:00")
     sp.set_defaults(func=cmd_schedule)
+
+    sp = sub.add_parser("ui", help="无障碍服务开关（读界面文字）")
+    sp.add_argument("action", nargs="?", default="status", choices=["enable", "disable", "status"])
+    sp.set_defaults(func=cmd_ui)
 
     sp = sub.add_parser("history", help="查看运行历史")
     sp.add_argument("--limit", type=int, default=10)

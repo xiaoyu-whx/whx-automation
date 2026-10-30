@@ -51,6 +51,19 @@ public interface JsApi {
 
     void key(int keyCode);
 
+    // 界面文本（无障碍）
+    /** 当前界面上所有可见文本，格式 "文本|x,y,w,h;文本2|..."。 */
+    String texts();
+
+    /** 找文本，返回控件中心 "x,y"；找不到 null。exact=true 为全等匹配。 */
+    String findText(String text, boolean exact);
+
+    /** 找文本并点击（用当前触控后端）。找到返回中心坐标，找不到返回 null。 */
+    String clickText(String text, boolean exact);
+
+    /** 无障碍服务是否已启用。 */
+    boolean uiReady();
+
     // 工具
     void sleep(int ms);
 

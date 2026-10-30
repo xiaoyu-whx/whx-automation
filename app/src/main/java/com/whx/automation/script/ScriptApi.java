@@ -222,6 +222,56 @@ public final class ScriptApi implements JsApi {
         }
     }
 
+    // ------------------------------------------------------------ 界面文本
+    private com.whx.automation.access.WhxAccessibilityService a11y() {
+        com.whx.automation.access.WhxAccessibilityService svc =
+                com.whx.automation.access.WhxAccessibilityService.get();
+        if (svc == null) {
+            host.log("error", "无障碍服务未启用：设置 → 无障碍 → WHX Automation");
+            throw new IllegalStateException("无障碍服务未启用");
+        }
+        return svc;
+    }
+
+    @Override
+    public boolean uiReady() {
+        return com.whx.automation.access.WhxAccessibilityService.isReady();
+    }
+
+    @Override
+    public String texts() {
+        host.checkStop();
+        StringBuilder sb = new StringBuilder();
+        for (com.whx.automation.access.WhxAccessibilityService.Node n : a11y().nodes()) {
+            if (sb.length() > 0) {
+                sb.append(';');
+            }
+            sb.append(n.text).append('|').append(n.x).append(',').append(n.y)
+              .append(',').append(n.w).append(',').append(n.h);
+        }
+        return sb.toString();
+    }
+
+    @Override
+    public String findText(String text, boolean exact) {
+        host.checkStop();
+        com.whx.automation.access.WhxAccessibilityService.Node n = a11y().findText(text, exact);
+        return n == null ? null : n.centerX() + "," + n.centerY();
+    }
+
+    @Override
+    public String clickText(String text, boolean exact) {
+        String pt = findText(text, exact);
+        if (pt == null) {
+            host.log("warn", "界面上没有找到文本: " + text);
+            return null;
+        }
+        String[] xy = pt.split(",");
+        click(Integer.parseInt(xy[0]), Integer.parseInt(xy[1]));
+        host.log("info", "已点击文本「" + text + "」@ " + pt);
+        return pt;
+    }
+
     // ------------------------------------------------------------------ 工具
     /** 休眠（可被 stop 打断：每 50ms 检查一次）。 */
     public void sleep(int ms) {

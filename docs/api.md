@@ -180,6 +180,37 @@ step("登录", () => { click(500, 800); sleep(500); });   // 打点，供轨迹�
 所有动作统一接受 `{ hold, duration, ... }` 选项对象。
 
 
+## 界面文本（无障碍）
+
+比找色找图更稳的一条路：直接读控件文字，不受分辨率/主题影响。
+
+```js
+uiReady()                 // 无障碍服务是否已启用
+texts()                   // 全部可见文本 "文本|x,y,w,h;…"
+findText(text, exact)     // 控件中心 "x,y" 或 null（exact=false 为包含匹配）
+clickText(text, exact)    // 找到并点击，返回中心坐标或 null
+```
+
+实测（系统设置界面）：
+
+```
+[info] 无障碍就绪 = true
+[info] 界面文本节点 17 个
+[info] 前 3 条: 在设置中搜索|160,106,192,43 || 应用和通知|144,228,160,43 || 权限、默认应用|144,271,232,38
+[info] 找「设置」→ 256,127
+```
+
+按文字点击（`clickText('电池')`）：
+
+```
+[info] 已点击文本「电池」@ 176,393
+点击前 Activity: com.android.settings/.Settings
+点击后 Activity: com.android.settings/.Settings$PowerUsageSummaryActivity
+```
+
+**启用方式**：`python tools/whx.py ui enable`（或 设置 → 无障碍 → WHX Automation）。
+未启用时脚本会明确报错并提示去开启，不会静默失败。
+
 ## 找图（模板）
 
 ```js
