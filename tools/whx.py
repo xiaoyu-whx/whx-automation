@@ -281,6 +281,40 @@ def cmd_shot(args):
     return 0
 
 
+def cmd_schedule(args):
+    """定时任务：每天某时刻运行脚本（设备端 AlarmManager 触发，不需要 PC 在线）。"""
+    adb = pick_device(Adb(), args.serial)
+    receiver = APP_ID + "/.schedule.ScheduleReceiver"
+
+    if args.action == "add":
+        hh, mm = args.time.split(":")
+        adb.shell("am broadcast -a com.whx.automation.SCHEDULE_ADD -n %s "
+                  "--es script %s --ei hour %d --ei minute %d"
+                  % (receiver, os.path.basename(args.script), int(hh), int(mm)))
+        print("已添加：每天 %s 运行 %s" % (args.time, os.path.basename(args.script)))
+        print("（到点由设备自己触发，PC 不需要在线；开机后会自动重挂）")
+        return 0
+
+    if args.action == "remove":
+        adb.shell("am broadcast -a com.whx.automation.SCHEDULE_REMOVE -n %s --es script %s"
+                  % (receiver, os.path.basename(args.script)))
+        print("已删除与 %s 相关的计划" % os.path.basename(args.script))
+        return 0
+
+    # list：直接读应用的 SharedPreferences，比从日志里抓更可靠
+    xml = adb.su("cat /data/data/%s/shared_prefs/whx_schedules.xml" % APP_ID, check=False)
+    m = re.search(r'<string name="entries">(.*?)</string>', xml, re.S)
+    if not m or not m.group(1).strip():
+        print("没有定时任务")
+        return 0
+    print("定时任务：")
+    for line in m.group(1).split("\n"):
+        parts = line.split("|")
+        if len(parts) == 3:
+            print("  %s:%s  %s" % (parts[1], parts[2], parts[0]))
+    return 0
+
+
 def cmd_pack(args):
     packer = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "packer", "make_sprite.py")
     cmd = [sys.executable, packer,
@@ -330,6 +364,12 @@ def main(argv=None) -> int:
     sp = sub.add_parser("shot", help="截图到 PC")
     sp.add_argument("path", help="保存路径，例如 dist/screen.png")
     sp.set_defaults(func=cmd_shot)
+
+    sp = sub.add_parser("schedule", help="定时任务（每天某时刻运行）")
+    sp.add_argument("action", choices=["add", "list", "remove"])
+    sp.add_argument("script", nargs="?", default="", help="脚本名")
+    sp.add_argument("--time", default="08:00", help="HH:mm，默认 08:00")
+    sp.set_defaults(func=cmd_schedule)
 
     sp = sub.add_parser("pack", help="打包成小精灵 APK")
     sp.add_argument("script")

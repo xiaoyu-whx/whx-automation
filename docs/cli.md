@@ -117,6 +117,39 @@ chmod 660 /data/data/com.whx.automation/files/scripts/x.js
 
 `whx.py` 里 `app_uid()` 就是干这个的。
 
+## 定时任务
+
+```bash
+python tools/whx.py schedule add demo.js --time 08:30
+python tools/whx.py schedule list
+python tools/whx.py schedule remove demo.js
+```
+
+到点由**设备自己**触发（AlarmManager），PC 不需要在线；开机后自动重挂。
+
+**实测**：添加 `00:20` 的计划后日志为
+
+```
+WHX/Schedule: 00:20  demo.js 下次触发 10-31 00:20
+WHX/Schedule: 已挂载 1 条定时任务
+```
+
+到点（误差 6ms）自动运行并续到次日：
+
+```
+00:20:00.006 WHX/Schedule: 闹钟触发: demo.js
+00:20:00.010 WHX/Task: start demo.js
+00:20:00.020 WHX/Schedule: 00:20  demo.js 下次触发 11-01 00:20
+00:20:00.731 WHX/Task: done ok=true cost=720ms
+```
+
+实现要点：
+
+- 用**一次性闹钟 + 触发后重排**，不用重复闹钟 —— 重复闹钟在改系统时间/夏令时后会漂。
+- 存储是 SharedPreferences 里的 `名字|小时|分钟`，启动时校验范围，越界条目丢弃
+  （宁可少跑一条，不可按非法时间乱跑）。
+- 小精灵包也能定时：触发时先看是不是绑定脚本，是就从 assets 读。
+
 ## 日志显示策略
 
 logcat 里的 Java 栈对脚本作者没用，所以只保留：

@@ -1,6 +1,6 @@
 # WHX Automation
 
-![tests](https://img.shields.io/badge/tests-48%20passed-brightgreen)
+![tests](https://img.shields.io/badge/tests-54%20passed-brightgreen)
 ![platform](https://img.shields.io/badge/platform-Android%209%2B-3ddc84)
 ![language](https://img.shields.io/badge/language-Java-orange)
 ![engine](https://img.shields.io/badge/JS%20engine-QuickJS-blue)
@@ -9,7 +9,7 @@
 > Android 自动化运行平台：**PC 上开发，Android 上运行，可打包成独立 APK 脱离 PC 执行**。
 > 全部自研，不复刻任何现有工具的实现。
 
-**当前状态：阶段十 完成**（小精灵可带配置项，不写死坐标）。剩余：ARM64 云手机/真机验证。
+**当前状态：阶段十一 完成**（设备端定时任务，触发精度 6ms）。剩余：ARM64 云手机/真机验证。
 
 📄 最高依据：[项目书](docs/project-charter.md) —— 本文档集与项目书冲突时，以项目书为准。
 
@@ -116,6 +116,7 @@ whx-automation/
 python tools/whx.py devices                      # 设备/root/分辨率
 python tools/whx.py run demo.js                  # 推脚本 → 运行 → 跟日志
 python tools/whx.py watch dist/my.js             # 监听改动，存盘即跑
+python tools/whx.py schedule add demo.js --time 08:30   # 设备端定时
 python tools/vision_cli.py template --tpl t.png  # PC 上验证找图命中位置
 python tools/whx.py shot dist/a.png              # 截图到 PC
 python tools/whx.py pack demo.js --label 小鱼 --pkg com.whx.sprite.demo
