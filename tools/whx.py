@@ -122,7 +122,7 @@ def cmd_ls(args):
 
 
 def do_run(adb: Adb, src: str, timeout: float, wait: bool = True,
-           echo: bool = True, cold: bool = False) -> int:
+           echo: bool = True, cold: bool = False, push_only: bool = False) -> int:
     """推脚本 → 冷启动运行 → 跟日志。返回脚本的成败（0 成功 / 1 失败）。"""
     name = os.path.basename(src)
 
@@ -145,6 +145,8 @@ def do_run(adb: Adb, src: str, timeout: float, wait: bool = True,
     # 冷启动：先 force-stop 再带参数启动。
     # 实测热启动（activity 已在栈顶）时 onNewIntent 那条路会静默不执行，
     # 冷启动可以保证 onCreate 路径必然生效，也让每次运行的状态干净。
+    if push_only:
+        return 0
     if echo:
         print("运行 %s" % name)
     proc = start_logcat(adb) if wait else None
@@ -165,11 +167,29 @@ def do_run(adb: Adb, src: str, timeout: float, wait: bool = True,
 def cmd_run(args):
     sys.stdout.reconfigure(line_buffering=True)
     adb = pick_device(Adb(), args.serial)
-    code = do_run(adb, args.script, args.timeout, wait=not args.no_wait,
-                  cold=args.cold)
+    scripts = args.script if isinstance(args.script, list) else [args.script]
+
+    if len(scripts) == 1:
+        return do_run(adb, scripts[0], args.timeout, wait=not args.no_wait, cold=args.cold)
+
+    # 多脚本 = 任务链：全部推送后再一次性广播，设备端顺序执行
+    names = []
+    for src in scripts:
+        do_run(adb, src, args.timeout, wait=False, echo=True, push_only=True)
+        names.append(os.path.basename(src))
+    print("任务链：%s" % " → ".join(names))
+
     if args.no_wait:
+        adb.shell("am broadcast -a com.whx.automation.RUN_SCRIPT -f 0x00000020 "
+                  "-n %s/.RunScriptReceiver --es script %s" % (APP_ID, ",".join(names)))
         print("已启动（不等结果）。用 `python tools/whx.py log` 看日志")
-    return code
+        return 0
+
+    proc = start_logcat(adb)
+    adb.shell("am broadcast -a com.whx.automation.RUN_SCRIPT -f 0x00000020 "
+              "-n %s/.RunScriptReceiver --es script %s" % (APP_ID, ",".join(names)))
+    return consume_log(proc, wait_done=True, timeout=args.timeout * max(1, len(names)),
+                       done_marker="chain finished")
 
 
 def cmd_watch(args):
@@ -232,7 +252,8 @@ def start_logcat(adb: Adb):
                             encoding="utf-8", errors="replace")
 
 
-def consume_log(proc, wait_done: bool, timeout: float = 120) -> int:
+def consume_log(proc, wait_done: bool, timeout: float = 120,
+                done_marker: str = DONE_MARK) -> int:
     started = time.time()
     failed = False
     try:
@@ -245,7 +266,7 @@ def consume_log(proc, wait_done: bool, timeout: float = 120) -> int:
             print(clean_log(line))
             if "E WHX/Script" in line:
                 failed = True
-            if wait_done and DONE_MARK in line:
+            if wait_done and done_marker in line:
                 break
             if time.time() - started > timeout:
                 print("（超时 %.0f 秒，停止跟随；任务可能还在跑）" % timeout)
@@ -440,7 +461,8 @@ def main(argv=None) -> int:
     sp.set_defaults(func=cmd_ls)
 
     sp = sub.add_parser("run", help="推送并运行脚本")
-    sp.add_argument("script", help="本地脚本路径，或设备上已有的脚本名")
+    sp.add_argument("script", nargs="+",
+                    help="本地脚本路径或设备上已有的脚本名；给多个则为任务链（顺序执行）")
     sp.add_argument("--no-wait", action="store_true", help="不等结果，立即返回")
     sp.add_argument("--cold", action="store_true",
                     help="先 force-stop 再启动（状态干净，但会摘掉无障碍服务）")

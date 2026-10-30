@@ -17,6 +17,26 @@ python tools/whx.py pack demo.js --label 小鱼 --pkg com.whx.sprite.demo
 
 多设备时用 `--serial emulator-5554` 指定；不指定则用第一个在线设备。
 
+### 任务链（多个脚本按顺序跑）
+
+```bash
+python tools/whx.py run login.js order.js cleanup.js
+```
+
+```
+任务链：login.js → order.js → cleanup.js
+[WHX/Task] 链式执行：共 3 个脚本，开始 login.js
+[WHX/Task] 链式执行下一个: order.js（剩余 1）
+[WHX/Task] chain finished
+```
+
+**中途失败会停链**（后续脚本通常依赖前一个的结果）：
+
+```
+[WHX/Task] done ok=false cost=30ms
+[WHX/Task] 链式执行中止：本次失败，跳过后续 1 个脚本
+```
+
 ### 写脚本的循环：watch
 
 ```bash

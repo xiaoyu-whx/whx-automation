@@ -9,7 +9,7 @@
 > Android 自动化运行平台：**PC 上开发，Android 上运行，可打包成独立 APK 脱离 PC 执行**。
 > 全部自研，不复刻任何现有工具的实现。
 
-**当前状态：阶段十七 完成**（无障碍接入，可按文字定位并点击）。剩余：ARM64 云手机/真机验证。
+**当前状态：阶段十八 完成**（任务链：多脚本顺序执行，失败即停）。剩余：ARM64 云手机/真机验证。
 
 📄 最高依据：[项目书](docs/project-charter.md) —— 本文档集与项目书冲突时，以项目书为准。
 
@@ -115,6 +115,7 @@ whx-automation/
 ```bash
 python tools/whx.py devices                      # 设备/root/分辨率
 python tools/whx.py run demo.js                  # 推脚本 → 运行 → 跟日志
+python tools/whx.py run a.js b.js c.js            # 任务链：顺序执行，失败即停
 python tools/whx.py watch dist/my.js             # 监听改动，存盘即跑
 python tools/whx.py schedule add demo.js --time 08:30   # 设备端定时
 python tools/whx.py history                     # 最近运行结果（成败/耗时/错误）

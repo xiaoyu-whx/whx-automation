@@ -44,6 +44,10 @@ public final class TaskManager {
     private volatile java.util.Map<String, String> retryConfig;
     private volatile int retriesLeft;
     private volatile int attemptsMade;
+    /** 任务链队列：每项是 {脚本名, 源码}。空表示不是链式执行。 */
+    private final java.util.ArrayDeque<String[]> chain = new java.util.ArrayDeque<>();
+    /** 当前这批是不是链式执行（用于在最后一个脚本结束后打一个明确的收尾标记）。 */
+    private volatile boolean chainActive;
 
     private TaskManager(Context context) {
         host = new ScriptHost(new HelperScreenSource(context), new HelperInput(context));
@@ -148,6 +152,30 @@ public final class TaskManager {
                 // 无人值守时人不在现场，事后要能查：什么时候跑的、成没成、为什么失败
                 history.add(name, success, costMs, error);
 
+                // 链式执行：上一个成功就接着跑下一个；失败则停链（避免带错往下走）
+                if (success && !chain.isEmpty()) {
+                    String[] next = chain.poll();
+                    Log.i(TAG, "链式执行下一个: " + next[0] + "（剩余 " + chain.size() + "）");
+                    startInternal(next[0], next[1],
+                            java.util.Collections.<String, String>emptyMap(), 0, 0);
+                    return;
+                }
+                if (!success && !chain.isEmpty()) {
+                    int skipped = chain.size();
+                    chain.clear();
+                    chainActive = false;
+                    Log.w(TAG, "链式执行中止：本次失败，跳过后续 " + skipped + " 个脚本");
+                    for (Observer o : observers) {
+                        o.onTaskLog("warn", "链中止，跳过后续 " + skipped + " 个脚本");
+                    }
+                }
+
+                if (chainActive && chain.isEmpty()) {
+                    // 给 CLI 一个明确的收尾标记：单个脚本的 done 不足以说明整条链跑完了
+                    chainActive = false;
+                    Log.i(TAG, "chain finished");
+                }
+
                 if (!success && retriesLeft > 0) {
                     retriesLeft--;
                     attemptsMade++;
@@ -169,6 +197,28 @@ public final class TaskManager {
             notifyState();
         }
         return ok;
+    }
+
+    /**
+     * 链式运行多个脚本（顺序执行，前一个结束后再跑下一个）。
+     *
+     * <p>中途失败就停下 —— 后续脚本通常依赖前一个的结果（比如先登录再下单），
+     * 失败还硬着头皮跑下去只会造成更乱的现场。
+     */
+    public synchronized boolean startChain(java.util.List<String[]> items) {
+        if (state != State.IDLE) {
+            return false;
+        }
+        if (items == null || items.isEmpty()) {
+            return false;
+        }
+        chain.clear();
+        chain.addAll(items);
+        chainActive = true;
+        String[] first = chain.poll();
+        Log.i(TAG, "链式执行：共 " + items.size() + " 个脚本，开始 " + first[0]);
+        return startInternal(first[0], first[1], java.util.Collections.<String, String>emptyMap(),
+                0, 0);
     }
 
     public synchronized void stop() {

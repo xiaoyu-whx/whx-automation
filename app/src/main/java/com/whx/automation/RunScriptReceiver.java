@@ -38,10 +38,28 @@ public class RunScriptReceiver extends BroadcastReceiver {
         Context app = context.getApplicationContext();
         ScriptStore store = new ScriptStore(app);
         try {
-            String code = store.load(new ScriptStore.Script(script, ScriptStore.Source.IMPORTED, 0));
             app.startForegroundService(new Intent(app, AutomationService.class));
-            boolean started = TaskManager.get(app).start(script, code);
-            Log.i(TAG, "请求运行 " + script + " → " + (started ? "已启动" : "被拒绝（已有任务）"));
+
+            if (script.contains(",")) {
+                // 逗号分隔 = 任务链：顺序执行，前一个结束再跑下一个
+                java.util.List<String[]> items = new java.util.ArrayList<>();
+                for (String name : script.split(",")) {
+                    String trimmed = name.trim();
+                    if (trimmed.isEmpty()) {
+                        continue;
+                    }
+                    items.add(new String[]{trimmed,
+                            store.load(new ScriptStore.Script(trimmed,
+                                    ScriptStore.Source.IMPORTED, 0))});
+                }
+                boolean started = TaskManager.get(app).startChain(items);
+                Log.i(TAG, "请求运行任务链（" + items.size() + " 个）→ "
+                        + (started ? "已启动" : "被拒绝（已有任务）"));
+            } else {
+                String code = store.load(new ScriptStore.Script(script, ScriptStore.Source.IMPORTED, 0));
+                boolean started = TaskManager.get(app).start(script, code);
+                Log.i(TAG, "请求运行 " + script + " → " + (started ? "已启动" : "被拒绝（已有任务）"));
+            }
         } catch (Exception e) {
             // 失败要吵：脚本不存在等错误必须落到日志，不能让调用方以为跑起来了
             Log.e(TAG, "运行失败: " + script, e);
