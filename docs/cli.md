@@ -150,6 +150,23 @@ WHX/Schedule: 已挂载 1 条定时任务
   （宁可少跑一条，不可按非法时间乱跑）。
 - 小精灵包也能定时：触发时先看是不是绑定脚本，是就从 assets 读。
 
+## 运行历史
+
+```bash
+python tools/whx.py history --limit 5
+```
+
+```
+最近 3 条运行记录（新的在前）：
+  10-31 00:34:21  成功  find_image_demo.js      685ms
+  10-31 00:33:49  失败  bad.js                   90ms  QuickJsException: cannot read property 'split' of null
+  10-31 00:33:47  成功  demo.js                 387ms
+```
+
+无人值守（定时任务/小精灵）出问题时人不在现场，事后必须能回答：
+**什么时候跑的、成没成功、为什么失败**。历史只存这四项（最多 20 条），
+不存日志全文（logcat 会被系统回卷覆盖）。
+
 ## 日志显示策略
 
 logcat 里的 Java 栈对脚本作者没用，所以只保留：

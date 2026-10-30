@@ -281,6 +281,22 @@ def cmd_shot(args):
     return 0
 
 
+def read_pref(xml: str, key: str) -> str:
+    """从 SharedPreferences XML 里取一个字符串值。
+
+    SharedPreferences 会把换行写成 &#10; 之类的 XML 实体，
+    不还原的话整串会挤成一行（实测踩过）。
+    """
+    m = re.search(r'<string name="%s">(.*?)</string>' % re.escape(key), xml, re.S)
+    if not m:
+        return ""
+    text = m.group(1)
+    for entity, ch in (("&#10;", "\n"), ("&#13;", ""), ("&lt;", "<"),
+                       ("&gt;", ">"), ("&quot;", '"'), ("&apos;", "'"), ("&amp;", "&")):
+        text = text.replace(entity, ch)
+    return text
+
+
 def cmd_schedule(args):
     """定时任务：每天某时刻运行脚本（设备端 AlarmManager 触发，不需要 PC 在线）。"""
     adb = pick_device(Adb(), args.serial)
@@ -303,15 +319,41 @@ def cmd_schedule(args):
 
     # list：直接读应用的 SharedPreferences，比从日志里抓更可靠
     xml = adb.su("cat /data/data/%s/shared_prefs/whx_schedules.xml" % APP_ID, check=False)
-    m = re.search(r'<string name="entries">(.*?)</string>', xml, re.S)
-    if not m or not m.group(1).strip():
+    raw = read_pref(xml, "entries")
+    if not raw.strip():
         print("没有定时任务")
+        return 0
+    print("定时任务：")
+    for line in raw.splitlines():
+        parts = line.split("|")
+        if len(parts) == 3:
+            print("  %s:%s  %s" % (parts[1], parts[2], parts[0]))
         return 0
     print("定时任务：")
     for line in m.group(1).split("\n"):
         parts = line.split("|")
         if len(parts) == 3:
             print("  %s:%s  %s" % (parts[1], parts[2], parts[0]))
+    return 0
+
+
+def cmd_history(args):
+    """查运行历史：无人值守任务出问题后，事后追溯用。"""
+    adb = pick_device(Adb(), args.serial)
+    xml = adb.su("cat /data/data/%s/shared_prefs/whx_history.xml" % APP_ID, check=False)
+    raw = read_pref(xml, "entries")
+    if not raw.strip():
+        print("还没有运行记录")
+        return 0
+    lines = [l for l in raw.splitlines() if l.strip()]
+    print("最近 %d 条运行记录（新的在前）：" % min(len(lines), args.limit))
+    for line in lines[: args.limit]:
+        parts = line.split("|")
+        if len(parts) < 4:
+            continue
+        ok = "成功" if parts[2] == "1" else "失败"
+        err = ("  " + parts[4]) if len(parts) > 4 and parts[4] else ""
+        print("  %s  %s  %-20s %6sms%s" % (parts[0], ok, parts[1], parts[3], err))
     return 0
 
 
@@ -370,6 +412,10 @@ def main(argv=None) -> int:
     sp.add_argument("script", nargs="?", default="", help="脚本名")
     sp.add_argument("--time", default="08:00", help="HH:mm，默认 08:00")
     sp.set_defaults(func=cmd_schedule)
+
+    sp = sub.add_parser("history", help="查看运行历史")
+    sp.add_argument("--limit", type=int, default=10)
+    sp.set_defaults(func=cmd_history)
 
     sp = sub.add_parser("pack", help="打包成小精灵 APK")
     sp.add_argument("script")

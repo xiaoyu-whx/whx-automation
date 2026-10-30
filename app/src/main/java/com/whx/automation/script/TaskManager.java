@@ -34,6 +34,7 @@ public final class TaskManager {
     }
 
     private final ScriptHost host;
+    private final RunHistory history;
     private final List<Observer> observers = new CopyOnWriteArrayList<>();
     private volatile State state = State.IDLE;
     private volatile String scriptName = "";
@@ -46,6 +47,7 @@ public final class TaskManager {
 
     private TaskManager(Context context) {
         host = new ScriptHost(new HelperScreenSource(context), new HelperInput(context));
+        history = new RunHistory(context);
     }
 
     public static synchronized TaskManager get(Context context) {
@@ -143,6 +145,8 @@ public final class TaskManager {
                     o.onTaskDone(success, error, costMs);
                 }
                 Log.i(TAG, "done ok=" + success + " cost=" + costMs + "ms");
+                // 无人值守时人不在现场，事后要能查：什么时候跑的、成没成、为什么失败
+                history.add(name, success, costMs, error);
 
                 if (!success && retriesLeft > 0) {
                     retriesLeft--;
