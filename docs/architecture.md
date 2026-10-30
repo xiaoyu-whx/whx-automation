@@ -1,175 +1,223 @@
 # 架构设计
 
-## 1. 为什么是这个形状
+依据：[项目书](project-charter.md)。本文只负责回答"怎么实现"，不改变项目书的目标。
 
-### 1.1 为什么不用无障碍服务（AutoJS6 的路）
+## 1. 总体结构
 
-| | 无障碍服务 | root（本项目） |
-| --- | --- | --- |
-| 点击 | `dispatchGesture` 回调链，单次 50~150ms，容易被系统掐断 | `sendevent` 直写触摸节点，**3~10ms** |
-| 截图 | MediaProjection，要授权弹窗，`FLAG_SECURE` 截不到 | 直读 fb0，**20~40ms**，安全界面也能截 |
-| 存活 | 服务可能被系统回收、被省电策略杀 | 常驻进程 + root，稳 |
-| 前提 | 用户手动开无障碍开关 | 一次 root，永久可用 |
-
-既然已经要求 root，就没有理由再走无障碍 —— 它是"不能 root 时的妥协方案"，不是更优解。
-
-### 1.2 为什么 Agent 不直接跑脚本
-
-脚本层需要 OpenCV 识别、需要写文件、需要富文本日志、需要断点式调试。把这些塞进 APK：
-编译一次 20~60 秒、没法断点、日志靠 adb logcat。放在 PC 上，改一行立刻重跑。
-**设备端只保留"必须靠近硬件"的三件事**：截图、注入、shell。
-
-### 1.3 为什么 PC ↔ Agent 用 TCP 而不是 adb shell
-
-`adb shell input tap` 每次要 spawn 一个进程，端到端 150~300ms；其中绝大部分是进程和
-协议栈开销，不是设备本身慢。TCP 直连 + 常驻 root shell 后，同样的 `sendevent` 只要 3~10ms。
-
-雷电视同局域网，`adb forward tcp:7911 tcp:7911` 后 PC 直连 `127.0.0.1:7911`，延迟稳定；
-上云手机时直接连 `ip:7911`，无需改协议。
-
-### 1.4 为什么脚本层是 Node、引擎是 Python
-
-- JS 脚本层要现代语法和 `async/await`（AutoJS6 的 Rhino 停在 ES5）；
-- 图像识别要 OpenCV 原生性能（Node 只能吃 WASM 版，慢 3~10 倍）。
-两者用 JSON-RPC over stdio 隔开，各自换实现不影响对方。
-
-### 1.5 为什么不复刻 AutoJS6 的 API
-
-「同类工具」和「克隆」是两件事。AutoJS6 的 API 有三个结构性缺陷：同步阻塞、`findImage` 内部
-隐式截图（竞态根源）、失败返回 `null`（静默失败）。照抄这三条等于继承它们的 bug。
-
-本项目 API 自研，见 [api.md](api.md)：**帧优先 + 定位器惰性求值 + 动作带断言 + 全异步**。
-将来若有人需要跑老脚本，另做一层薄的 `autojs-compat` 适配器，主 API 不为兼容性变形。
-
-## 2. 组件职责
+一个 APK，两段进程。
 
 ```
-┌──────────────────────────────────────────────────────────┐
-│ JS 脚本  await click(120, 340)                            │
-├──────────────────────────────────────────────────────────┤
-│ runtime/  Node                                           │
-│   api.js     把 API 调用翻成 RPC 请求，管理 Promise        │
-│   bridge.js  spawn Python，单行 JSON 收发                 │
-├──────────────────────────────────────────────────────────┤
-│ engine/  Python                                          │
-│   rpc.py      请求分发                                    │
-│   device.py   语义层：tap / swipe / key / screenshot      │
-│   vision.py   OpenCV：模板匹配、找色（定分辨率，单尺度）    │
-│   client.py   Agent 客户端：连接池、超时、重连、seq 匹配    │
-│   trace.py    轨迹录制（M4）                              │
-├──────────────────────────────────────────────────────────┤
-│ agent/  Kotlin（设备内，root）                            │
-│   Protocol.kt     帧编解码                                │
-│   ScreenGrabber   fb0 直读 → RGBA / JPEG                  │
-│   TouchInjector   sendevent Protocol B，多点、贝塞尔插值   │
-│   KeyInjector     sendevent 按键 / input keyevent         │
-│   InputSource     /dev/input 探测与轴范围解析              │
-│   RootShell       libsu 常驻 shell                        │
-└──────────────────────────────────────────────────────────┘
+┌─ Automation App（uid=10xxx，Java）──────────────────┐
+│  权限管理 · 任务启动 · 运行状态 · 日志 · 前台服务     │
+│                                                    │
+│  ┌─ Automation Core（独立模块，同进程）───────────┐  │
+│  │  ScreenSource（截图后端，可替换）              │  │
+│  │  Vision（取色 / 找色 / 匹配）                  │  │
+│  │  Input（触控后端，可替换）                     │  │
+│  │  ScriptEngine（QuickJS 宿主）                  │  │
+│  │  ScriptApi（JS ↔ Java 绑定）                   │  │
+│  │  TaskManager（生命周期 / 停止 / 日志）          │  │
+│  └────────────────────────────────────────────────┘  │
+└──────────────────┬───────────────────────────────────┘
+                   │ LocalSocket（约 0.1~0.3ms）
+┌──────────────────▼───────────────────────────────────┐
+│ Root Helper（uid=0，Java，APK 自带，su 拉起）          │
+│  ScreenCapture · TouchInject · KeyInject · RootShell  │
+└──────────────────────────────────────────────────────┘
 ```
 
-**职责边界铁律**：Agent 不认识"找图"，Engine 不认识"事件节点"。跨界的逻辑一律放 Engine。
+### 1.1 为什么必须有 helper 进程
+
+**实测结论**（2026-10-30，雷电 9）：
+
+- `SurfaceControl.screenshot` 在 **shell 身份（uid 2000）** 下调用成功（11.4ms）
+- 普通应用进程缺少 `READ_FRAME_BUFFER` 权限，同一调用拿不到画面
+- 写 `/dev/input/eventN` 需要 root
+
+所以"硬件能力"必须放在 root 进程里。helper 仍是 APK 的组成部分（作为 dex 随 APK 分发，
+首次运行时从 assets 释放，用 `su -c app_process` 启动），**不增加交付物**。
+
+替代方案的代价（都不采用）：
+
+| 方案 | 代价 |
+| --- | --- |
+| MediaProjection | 每次运行要授权弹窗；常驻镜像多占 GPU/内存（低配云手机吃不消） |
+| AccessibilityService 手势 | 点击 50~150ms，慢 3~5 倍，且服务容易被系统回收 |
+| 全 root 进程跑一切 | 脚本引擎、UI 都在 root 进程，闪退即全崩，调试也困难 |
+
+### 1.2 后端抽象（满足项目书"可替换设计"）
+
+```java
+interface ScreenSource {          // 截图后端
+    Frame capture(Rect region);    // 返回可复用的帧对象
+    String name();                 // "surfacecontrol" / "mediaprojection" / ...
+    boolean available();
+}
+
+interface InputBackend {          // 触控后端
+    void tap(int x, int y, int holdMs);
+    void swipe(Path path, int durationMs);
+    void key(int code);
+    String name();                 // "evdev" / "accessibility" / "shell"
+    boolean available();
+}
+```
+
+**v1 只实现 `SurfaceControlSource` 与 `EvdevInput`（root 路径）**，其余保持接口空位。
+项目书要求"不假定所有设备都能用同一种方式"，接口层已经满足；实现按需再补。
+
+## 2. 模块职责
+
+| 模块 | 归属 | 职责 | 明确不做 |
+| --- | --- | --- | --- |
+| `App` | APK | 权限、任务、状态、日志、前台服务 | 不编辑代码、不构建 APK |
+| `core/ScreenSource` | APK | 抓帧、缓存、区域裁剪、格式转换 | 不认识业务 |
+| `core/Vision` | APK | 取色、找色、模板匹配 | 不做 I/O |
+| `core/Input` | APK | 触控语义（点击/长按/滑动/手势）、调度队列 | 不直接写设备节点 |
+| `core/ScriptEngine` | APK | QuickJS 实例、脚本线程、停止标志 | 不做设备操作 |
+| `core/ScriptApi` | APK | JS 全局函数绑定、参数校验、异常转换 | 不含算法 |
+| `helper` | root 进程 | 截图、注入、root shell | 不认识脚本与视觉 |
+| `tools` | PC | 部署、日志、调试、打包 | 不参与运行时 |
+
+**边界铁律**：helper 不认识"找色"，core 不碰 `/dev/`。
 
 ## 3. 线程模型
 
-| 组件 | 模型 |
-| --- | --- |
-| Agent | 1 个 accept 线程 + 每连接 1 个读线程 + 1 个**串行执行线程**（注入必须保序） |
-| Agent 截图 | 独立的抓帧线程，一次只允许一个在跑，后来的请求等待（避免撕裂） |
-| Engine | 主线程阻塞式 CLI；Web 服务模式下每设备一线程 |
-| runtime | Node 单线程事件循环，全异步 |
-
-**为什么注入要串行**：`sendevent` 是内核事件流，两条并发写入会交错成非法序列，表现是
-"偶尔点偏"或"滑动变成直线"。串行化是正确性要求，不是性能妥协（单次 3~10ms 足够快）。
-
-## 4. 延迟预算（目标值，1280×720 / 雷电 9 / 本机回环）
-
-| 操作 | 分解 | 目标 |
+| 线程 | 数量 | 说明 |
 | --- | --- | --- |
-| ping | TCP 回环 | < 1ms |
-| tap | 协议 1ms + sendevent 2~6ms | **3~10ms** |
-| swipe（300ms） | 插值 20 帧 × sendevent | 300ms ± 10ms |
-| screenshot (raw) | fb0 读 15~30ms + 传输 3.7MB ≈ 5ms | **20~40ms** |
-| screenshot (jpeg q85) | 读 25ms + 编码 20ms + 传 250KB | 45~60ms |
-| key | sendevent 按键节点 | 5~15ms |
-| inputText | `input text`（起进程） | 150~300ms |
-| uiDump | `uiautomator dump` | 200~400ms |
-| **找图 + 点击 一轮** | 截图 30 + 匹配 10 + 点击 5 | **~45ms** |
+| Script thread | 1 | QuickJS 实例专属线程；脚本同步调用在这里阻塞等待结果 |
+| Input thread | 1 | 触控串行执行，保证事件流顺序 |
+| Capture thread | 1 | 抓帧串行，避免撕裂 |
+| Control thread | 1 | TCP 控制面，与脚本执行解耦 |
+| Helper threads | 少量 | 每个连接一个读线程 + 一个执行线程 |
 
-对比：同样的循环走 adb 是 400~700ms。这是本项目唯一真正重要的指标。
+线程总数控制在 **6~8 个**（项目书要求"控制线程数量"，低配云手机对线程数敏感）。
 
-## 5. 关键技术决策
+**为什么触控必须串行**：`write()` 到 evdev 是内核事件流，两条并发写入会交错成非法序列，
+表现是"偶尔点偏"或"滑动变直线"。这是正确性要求，不是性能妥协（单次仅 0.03ms）。
 
-### 5.1 截图：优先 fb0 直读，screencap 是第二条腿
+**脚本线程阻塞为什么没问题**：脚本在独立线程，不影响 UI 与前台服务；且单次操作
+只有 11~31ms（实测），同步调用代价可接受 —— 详见 [api.md](api.md) 第 1 节。
+
+## 4. 实测数据（2026-10-30 · 雷电 9 · Android 9 · x86_64 · 720×1280）
+
+| 阶段 | P50 | 说明 |
+| --- | --- | --- |
+| `SurfaceControl.screenshot()` | 3.5 ms | SurfaceFlinger 合成，binder 往返 |
+| HARDWARE → ARGB_8888 回读 | 5.7 ms | GPU 回读，**不可省略** |
+| `getPixels()` → int[] | 2.3 ms | |
+| **截图合计** | **11.4 ms** | |
+| 9 条 evdev 事件写入 | 0.033 ms | |
+| **完整 tap（按住 30ms）** | **31.3 ms** | 按住时长是延迟下限 |
+
+对照组（同一台机器、同一帧）：`adb exec-out screencap` = 141.6ms；`input tap` = 134.6ms；
+shell 里 9 条 `sendevent` = 210ms（每条 17ms 进程开销）。
+
+**结论：进程内实现比 adb 方案快 4~12 倍，且瓶颈已转移到"平台本身"而非我们的代码。**
+
+## 5. 关键技术细节
+
+### 5.1 截图：SurfaceControl + 必须回读硬件位图
+
+```java
+// Android 9（API 28）：screenshot(Rect crop, int width, int height, int rotation)
+Method m = SurfaceControl.class.getMethod(
+        "screenshot", Rect.class, int.class, int.class, int.class);
+Bitmap bmp = (Bitmap) m.invoke(null, new Rect(0, 0, w, h), w, h, 0);
+
+// 坑：返回的可能是 Config#HARDWARE，不能直接 getPixels()
+Bitmap soft = (bmp.getConfig() == Bitmap.Config.HARDWARE)
+        ? bmp.copy(Bitmap.Config.ARGB_8888, false)   // 约 5.7ms
+        : bmp;
+soft.getPixels(pixels, 0, w, 0, 0, w, h);
+```
+
+- **坑 1**：`getPixels()` 对 HARDWARE bitmap 抛
+  `IllegalStateException: unable to getPixels(), pixel access is not supported on Config#HARDWARE bitmaps`。
+  报错文本与"截图"无关，误判成权限问题会浪费大量时间。
+- **坑 2**：**雷电 9 没有任何 framebuffer**（`/dev/fb0`、`/dev/graphics` 均不存在），
+  所以不存在"fb0 直读"这条路，只能用 SurfaceControl。
+- API 34 起 `screenshot` 被 `captureDisplay` 取代，helper 需按 SDK 版本分支。
+
+**缓存与复用**（项目书 4.1 要求）：`Frame` 对象持有 `int[]` 像素与尺寸，同一帧内多次
+识别共享同一份像素；只有显式 `refresh()` 才重新抓帧。避免"每次找色都重新截图"。
+
+### 5.2 注入：evdev 直写 + 轴坐标交换
+
+本机实测 `/dev/input/event2`：
 
 ```
-读 /dev/graphics/fb0 → 按屏幕宽高裁剪首帧 → 按 framebuffer 的 pixel format 转换
+ABS_MT_POSITION_X : 0..1279   ← 屏幕「高」
+ABS_MT_POSITION_Y : 0..719    ← 屏幕「宽」
+ABS_MT_SLOT       : 0..15     ← 最多 16 点
 ```
 
-**失败原因和 root 无关**，是这两条：
+**映射：`轴X = 屏幕y`，`轴Y = 屏幕x`**（已用"注入后跳转到同一页面"验证）。
+不交换不会报错，只会静默点偏 —— 这类问题是"失败要吵"原则存在的理由。
 
-1. Android 8+ 很多内核**压根没编译 framebuffer**（走 DMA-BUF + HWC），`/dev/graphics/fb0`
-   这个文件不存在 —— root 再高也读不到不存在的节点；
-2. 就算存在，Android 用双缓冲，直接读首帧可能拿到**上一帧甚至黑帧**，需要探测 offset 或重读。
-
-所以 `screencap` 不是「应急兜底」，是必须存在的第二条腿。处理方式：**Agent 启动时探测一次**
-（读一帧，非全黑即认为可用），结果写进 `info.grabber.mode`，PC 端可强制指定，**不静默切换**。
-
-> 雷电 9（Android 9 / qemu 系）大概率有 fb0；上云手机前必须先用 `info` 探测一遍。
-
-### 5.2 注入：sendevent + Protocol B
-
-**失败原因同样和 root 无关**，是「找错设备节点」或「节点变了」：
-
-- 一台设备上 `getevent` 能看到一堆节点（触摸屏、虚拟按键、传感器、手柄），必须按
-  `ABS_MT_POSITION_X` 挑出真正的触摸屏
-- 轴值不是屏幕像素（常见 0~32767），必须按 `absmax` 做比例映射，硬编码必点偏
-- 重启或切前后台后节点号会变（`event2` → `event3`），**探测结果不能永久缓存**
-- 部分云手机是虚拟化输入，`getevent` 里看不到触摸设备（厂商自有注入通道）
-
-启动时通过 `getevent -p` 探测并记录 `absmax`/设备名，之后把像素坐标线性映射到轴值，按 B 协议发：
+事件结构（64 位设备 `struct input_event` 24 字节，小端）：
 
 ```
-EV_ABS ABS_MT_SLOT 0
-EV_ABS ABS_MT_TRACKING_ID <唯一id>
-EV_ABS ABS_MT_POSITION_X / _Y
-EV_SYN SYN_REPORT
-（移动帧只重发 X/Y + SYN_REPORT）
-EV_ABS ABS_MT_TRACKING_ID -1   ← 抬手
-EV_SYN SYN_REPORT
+[0..7] tv_sec   [8..15] tv_usec   [16..17] type   [18..19] code   [20..23] value
 ```
-按下与抬手之间**必须**有时长（默认 40~80ms 随机），否则被判定为无效点击。
 
-### 5.3 分辨率无关设计
+一次 tap 的 9 条事件：`ABS_MT_SLOT 0` → `TRACKING_ID 1` → `POSITION_X <屏幕y>` →
+`POSITION_Y <屏幕x>` → `BTN_TOUCH 1` → `SYN_REPORT` → （按住 30~40ms）→
+`TRACKING_ID -1` → `BTN_TOUCH 0` → `SYN_REPORT`。
 
-自己用固定 720×1280，但开源后别人可能是 1080×1920 甚至折叠屏，所以**不能绑死**：
+**其它必知**：节点号重启后会变（`event2`→`event3`），每次启动必须重新探测；
+部分云手机是虚拟化输入，`getevent` 里看不到触摸设备，需要在阶段七单独处理。
 
-- 模板图旁存 `<name>.png.json`：`{"w":720,"h":1280}` 标注来源分辨率
-- 匹配时 `scale = 设备宽 / 模板标注宽`，按比例缩放模板后匹配
-- 允许 ±10% 多尺度兜底（`policy.vision.scales`），最多 3 次匹配
-- 分辨率相同时 `scale = 1.0`，只跑一次：单帧 **8~12ms**；不同分辨率最多 3 次，**仍 < 40ms**
+### 5.3 图像识别：先自己写，不引 OpenCV
 
-所以「固定 720×1280」只是**让匹配更快**，不是能力上限。剧本里也不硬编码坐标，一律走定位器 —— 硬编码坐标换分辨率后必然失效。
+项目书明确：简单识别优先自主实现。取色/找色本质是数组扫描，自己写更快更省内存：
 
-### 5.4 图标/文字识别的边界
+- 像素内联为 `int`（ARGB），避免 `Bitmap.getPixel()` 的 JNI 开销
+- 区域扫描按行连续访问，提高缓存命中
+- 找色支持容差与"步长"参数（低配设备可跳采样）
+- 模板匹配采用"金字塔 + 归一化互相关"，仍不足再考虑 JNI/C++
 
-v1 只做**模板匹配**（`findImage`）。OCR（`findText`）留到 M5 之后单独评估 —— 云手机跑
-PaddleOCR 要额外模型文件和 200ms+ 推理时间，先不做。
+OpenCV 只在**确实需要**（多尺度、特征匹配、形态学）时才评估，不预先引入 20MB。
 
-## 6. 失败模式与对策
+### 5.4 脚本引擎：QuickJS
+
+- 实例非线程安全 → 一个实例一个线程，停止用标志位 + 中断回调
+- JS 调用 Java 走 JNI 绑定；**每次调用开销要测**，必要时批量绑定（阶段五验证）
+- 同步 API 的实现方式：Java 方法在脚本线程上阻塞等待任务完成（见 api.md 第 1 节）
+
+### 5.5 打包（项目书第六节两种模式）
+
+| 模式 | 做法 |
+| --- | --- |
+| 内置脚本 | 壳 APK + 脚本与资源作为 assets，重签后分发，装完即跑 |
+| 外部导入 | APK 提供导入入口（`adb push` 到指定目录或应用内选择文件），运行时读盘 |
+
+两种模式共用同一套 Core，区别只在"脚本从 assets 读还是从磁盘读"。
+
+## 6. 低配设备约束（项目书第八节）
+
+| 约束 | 做法 |
+| --- | --- |
+| 1 核 1GB 云手机 | 单线程脚本、单 capture 线程；像素缓冲只保留最近 1~2 帧 |
+| 内存不持续增长 | `Frame` 显式回收；避免每帧新建数组；脚本包资源按需加载 |
+| 线程数 | 总数 ≤ 8 |
+| CPU 占用 | 找色支持区域限定与步长；不做无意义高频截图（帧内复用） |
+
+## 7. 失败模式与对策
 
 | 失败 | 表现 | 对策 |
 | --- | --- | --- |
-| Agent 拿不到 root | `su -c id` 失败 | 启动即报 `E_NO_ROOT`，不进入半残状态 |
-| fb0 读不到 | 首帧全黑/权限拒绝 | 自动回退 screencap，并在 `info` 里标记 `screencap=true` |
-| 触摸设备找不到 | 注入无反应 | 启动探测失败则 `info` 返回 `input_ready=false`，Engine 拒绝执行点击 |
-| 连接断开 | 请求超时 | 客户端指数退避重连（0.2s → 3.2s，上限 5 次），期间请求排队 |
-| 分辨率和预期不符 | 点击偏移 | Engine 在连接握手中校验 1280×720，不符直接报错退出 |
-| 注入过频 | 目标 App 丢帧/误判 | 全局最小间隔 30ms + 随机抖动（可关） |
+| su 被拒 | helper 起不来 | App 明确报错并退出，不降级 |
+| helper 崩溃 | 截图/点击超时 | 心跳检测，自动重启 |
+| 截图返回 null | 息屏/权限不足 | 连续 3 次失败重启 helper 并上报 |
+| HARDWARE 位图未回读 | `IllegalStateException` | 强制判断 config 后 copy |
+| 触摸节点变更 | 点击全部无效 | 每次启动重新探测；点击后无画面变化则告警 |
+| QuickJS 崩溃 | 脚本线程挂掉 | 隔离在脚本线程，App 与 Core 不受影响 |
 
-## 7. 明确不做的事
+## 8. 明确不做
 
-- 不做免 root 兜底（用户明确要求，简化掉一半分支）
-- 不做真机适配（只针对模拟器/云手机）
-- 不做 iOS
-- 不内置脚本商店 / 图形化编排（至少 M5 之前）
+- 设备端代码编辑 / 编译 / 打包
+- 中文脚本语言、图形化编排
+- 复刻任何现有工具的 API 或脚本语法
+- 预先引入 OpenCV、C++、NDK 原生库（先测再说）
+- iOS

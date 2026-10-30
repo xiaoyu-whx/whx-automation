@@ -1,52 +1,104 @@
 # 环境现状与待装项
 
-记录这台机器上**实际验证过**的事实，以及 M1 之前必须补齐的东西。
+只记录**实测过**的事实。M1 之前必须补齐的项单独标出。
 
 ## 已具备（2026-10-30 实测）
 
 | 项 | 版本 / 路径 | 状态 |
 | --- | --- | --- |
-| JDK | 21.0.9 LTS，`JAVA_HOME=D:\Java\1.JAVA`，`javac` 可用 | ✅ |
+| JDK | **21.0.9 LTS**，`JAVA_HOME=D:\Java\1.JAVA`，`javac` 可用 | ✅ |
 | ADB | platform-tools 37.0.1，`C:\Users\1\AppData\Local\Android\platform-tools\adb.exe` | ✅ |
 | 雷电模拟器 9 | `D:\leidian\LDPlayer9\dnplayer.exe`，运行中，adb 端口 5555 | ✅ |
-| 模拟器系统 | Android 9（API 28），720×1280，SU 可用 | ✅ |
-| Python | 3.8.6，numpy 1.24.4 / opencv 4.12.0 / flask / websockets | ✅ |
+| 模拟器系统 | Android 9（API 28），720×1280，**root 可用（`su` 已验证）** | ✅ |
+| Python | 3.8.6（numpy / opencv / flask 可用） | ✅ |
 | Node | v24.21.0 | ✅ |
 
-> 注：JDK 是 **21**，不是 25。AGP 8.x 要求 JDK 17+，21 完全够用，不需要再装。
+> JDK 是 21，不是 25。AGP 8.x 要求 17+，21 够用，不需要另装。
+> Android Studio 装不装可选：命令行 `gradlew assembleDebug` 同样能出 APK，
+> 装它的唯一收益是布局预览与真机调试面板。
 
-## 缺失（M1 开始前必须装）
+## 缺失（M1 开始前必装）
 
-| 项 | 用途 | 装法（规划，尚未执行） |
+| 项 | 用途 | 大小 |
 | --- | --- | --- |
-| Android SDK cmdline-tools | `sdkmanager`，装 platform/build-tools | 官方 zip 解压到 `D:\Android\Sdk` |
-| Android SDK Platform 34 | 编译目标 | `sdkmanager "platforms;android-34"` |
-| Build-Tools 34.0.0 | aapt2 / zipalign / apksigner | `sdkmanager "build-tools;34.0.0"` |
-| Gradle 8.x | 构建 | 用 **wrapper**（工程自带，首次运行自动下载） |
+| `cmdline-tools` | 提供 `sdkmanager` | ~120MB |
+| `platforms;android-34` | 编译期 API 存根 | ~100MB |
+| `build-tools;34.0.0` | `aapt2` / `d8` / `zipalign` / `apksigner` | ~60MB |
+| Gradle（wrapper 自取） | 构建 | ~130MB |
+| NDK（可选） | 只有在图像处理被证明是瓶颈时才用 | ~2GB |
+| CMake（可选） | 同上，随 NDK 一起装 | ~200MB |
 
-**总计约 1~2GB 下载**。`ANDROID_HOME=D:\Android\Sdk` 需写入用户环境变量。
+> 阶段一按项目书要求把 NDK/CMake 装上备用，但**不引入 C++ 代码** ——
+> 项目书原则：先测量，再决定是否使用 C++。Java 层已实测达标（截图 11.4ms / 点击 31.3ms）。
 
-## 模拟器的两处设置（人工确认）
+建议装到 `D:\Android\Sdk`，并写入 `ANDROID_HOME`。
 
-1. **root**：雷电设置 → 其他设置 → `ROOT 权限` 打开（当前 SU 已可用）
-2. **分辨率**：固定 720×1280，DPI 建议 320，**不要开"自适应"**
+**首次构建另需下载** AGP + QuickJS AAR（几百 MB，落在 `~/.gradle` 与 `~/.m2`）。
+
+## M2 额外依赖
+
+| 依赖 | 用途 | 来源 |
+| --- | --- | --- |
+| QuickJS AAR | 设备端 JS 引擎 | Maven Central（`com.github.taoweiji` 等现成封装） |
+| libsu | 常驻 root shell | Maven Central |
+
+> 这两个都要能访问 Maven 仓库。若下载被墙，先在 PC 上下载离线包，用
+> `mavenLocal()` 或本地 `libs/` 引入。
+
+## 实测基准（2026-10-30，雷电 9 / Android 9 / x86_64 / 720×1280）
+
+用最小 Java 程序（`javac` + `d8` + `app_process`，不需要 Gradle）测得：
+
+| 测量项 | 结果 |
+| --- | --- |
+| 进程内 `SurfaceControl.screenshot` | **3.5 ms** |
+| HARDWARE → ARGB_8888 回读 | **5.7 ms** |
+| `getPixels()` | **2.3 ms** |
+| 截图合计 | **11.4 ms** |
+| 9 条 evdev 事件写入 | **0.033 ms** |
+| tap（含 30ms 按住） | **31.3 ms** |
+| `adb exec-out screencap`（raw） | 141.6 ms |
+| `input tap` | 134.6 ms |
+| shell 里 9 条 `sendevent` | 210 ms（17ms/条进程开销） |
+
+关键环境事实：
+
+- `/dev/graphics`、`/dev/fb0` **不存在**，`/sys/class/graphics` 为空 → **无 framebuffer**
+- 触摸设备 `/dev/input/event2`，`ABS_MT_POSITION_X max=1279`（=屏幕高），
+  `ABS_MT_POSITION_Y max=719`（=屏幕宽），`ABS_MT_SLOT max=15` → **轴需交换**
+- 截图在 **shell 身份（uid 2000）** 下即可成功；注入需要 **root**
+
+## 网络前置检查（M1 动手前跑一次）
+
+```bash
+curl -sI https://dl.google.com/android/repository/repository2-3.xml | head -1   # SDK 源
+curl -sI https://repo1.maven.org/maven2/ | head -1                              # Maven
+```
+
+两个都通才动手装，否则先解决代理。
+
+## 模拟器设置（人工确认）
+
+1. **root**：雷电设置 → 其他设置 → `ROOT 权限` 打开（已验证可用）
+2. **分辨率**：720×1280，DPI 320，**关闭"自适应"**
+3. **磁盘**：`/data` 至少留 2GB（脚本包与轨迹截图）
 
 ## 端口与转发
 
 ```
-雷电实例 1: 127.0.0.1:5555   （adb）
-Agent 服务: 设备内 0.0.0.0:7911
-PC 访问方式: adb forward tcp:7911 tcp:7911  →  连 127.0.0.1:7911
+雷电实例 1  adb: 127.0.0.1:5555
+设备端运行时监听: 127.0.0.1:7911
+PC 访问: adb forward tcp:7911 tcp:7911  →  连 127.0.0.1:7911
 ```
 
-多开时第 N 台实例用 `5555 + 2×(N-1)`，agent 端口统一 7911，靠不同 `adb forward`
-的本地端口（7911、7912、7913…）区分。
+多开时第 N 台实例用 `5555 + 2×(N-1)`；本地转发端口用 `7911、7912、7913…` 区分。
 
 ## 复查命令
 
 ```bash
 java -version
 adb devices -l
+adb shell su -c id          # 应输出 uid=0(root)
 node --version
 python -c "import cv2, numpy; print(cv2.__version__, numpy.__version__)"
 ```

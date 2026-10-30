@@ -1,92 +1,114 @@
-# autojs-xiaoyu
+# WHX Automation
 
-> 面向 **已 root 的安卓模拟器 / 云手机** 的自动化引擎。PC 写脚本，设备端 root 直连执行。
-> 目标：点击 3~10ms、截图 20~40ms —— 比 AutoJS6 / AutoPro 快一个数量级。
+> Android 自动化运行平台：**PC 上开发，Android 上运行，可打包成独立 APK 脱离 PC 执行**。
+> 全部自研，不复刻任何现有工具的实现。
 
-**当前状态：规划阶段（M0）。仓库里只有文档，没有代码。**
+**当前状态：阶段〇（立项/文档）。代码尚未开始。**
 
----
+📄 最高依据：[项目书](docs/project-charter.md) —— 本文档集与项目书冲突时，以项目书为准。
 
-## 一句话定位
+## 定位
 
-AutoJS6 把脚本跑在手机上但用无障碍服务，慢且不稳；AutoPro 类工具偏录制回放。
-**注意：本项目对标的是「同一件事」，不是「同一套写法」** —— API 完全自研，不复刻 AutoJS6 的语义。
-本项目走第三条路：**设备端放一个极小的 root 常驻 Agent（只管截图和注入），PC 端放完整的
-脚本引擎、图像识别和调试工具**。root 保证性能上限，PC 保证开发体验。
+不是手机端编程软件，而是**通过 JavaScript 控制 Android 设备的自动化运行平台**。
 
-## 硬约束（决定了所有设计）
+- 开发全在 PC：脚本编写、调试、测试、APK 构建
+- Android 只跑：导入、选择、启动、看日志，**不提供编辑功能**
+- 引擎独立于界面，方便后续复用
+- 最终产物可打包成独立 APK，安装后无需 PC
 
-| 约束 | 取值 | 影响 |
-| --- | --- | --- |
-| root | **必须有**，不做免 root 兜底 | 可用 `sendevent` 注入、直读 `/dev/graphics/fb0` 截图 |
-| 目标设备 | 雷电模拟器 9、云手机（后期） | 无真机适配负担，但要走 ADB over TCP |
-| 分辨率 | **任意**（自己用 720×1280） | 模板图带来源分辨率标注，匹配时按比例缩放；同分辨率时缩放到 1.0，最快 |
-| 系统版本 | Android 9 ~ 13 | `minSdk` 至少覆盖 9（API 28） |
-
-## 架构
+## 架构（一个 APK，两段进程）
 
 ```
-scripts/*.js  ──stdio JSON-RPC──▶  engine/ (Python)  ──TCP 二进制──▶  agent/ (Kotlin, root)
-   JS 脚本                        OpenCV 识别 + 调度              截图 / sendevent 注入
+PC 开发环境
+  VS Code / Android Studio · 脚本编写调试 · APK 构建
+                    │  TCP 7911（adb forward）
+                    ▼
+┌── Android APK ───────────────────────────────┐
+│ Automation App（uid=10xxx）                  │
+│   权限管理 · 任务启动 · 运行状态 · 日志       │
+│                                              │
+│ Automation Core（同进程内，独立模块）         │
+│   截图引擎 · 图像识别 · 触控调度              │
+│   QuickJS · JavaScript API · 任务生命周期     │
+└───────────────┬──────────────────────────────┘
+                │ LocalSocket（约 0.1~0.3ms）
+┌───────────────▼──────────────────────────────┐
+│ Root Helper（uid=0，APK 自带、由 su 拉起）     │
+│   SurfaceControl 截图 · evdev 注入 · root sh  │
+└──────────────────────────────────────────────┘
+                ▼
+        模拟器 / 云手机 / 真机
 ```
 
-- **agent/**：设备端 APK，root 常驻，只做三件事 —— 截图、注入触摸/按键、透传 shell。
-- **engine/**：PC 端 Python，负责图像识别、坐标计算、流程编排、调试录制、CLI。
-- **runtime/**：PC 端 Node，提供自研 JS API（帧优先 + 动作带断言），脚本在这里跑。
+**为什么需要 helper 子进程**：实测确认，普通应用进程拿不到 `READ_FRAME_BUFFER` 权限，
+`SurfaceControl` 截图会失败；写 `/dev/input/*` 也必须有 root。所以把**纯硬件操作**
+隔离到一个最小的 root 进程。它仍是同一个 APK 的一部分，不增加交付物。
 
-详细设计见 [docs/architecture.md](docs/architecture.md)，
-通信协议见 [docs/protocol.md](docs/protocol.md)，
-里程碑见 [docs/roadmap.md](docs/roadmap.md)。
+## 技术栈
+
+| 技术 | 用途 |
+| --- | --- |
+| Java | Android 应用与自动化核心 |
+| JavaScript | 用户脚本 |
+| QuickJS | Android 端 JS 引擎（支持 async/await） |
+| Kotlin | 不使用（项目书指定 Java） |
+| C++ / JNI | 仅当图像处理被证明是瓶颈时引入 |
+| Gradle + Android SDK | 构建 |
 
 ## 目录（规划，尚未创建）
 
 ```
-autojs-xiaoyu/
-├─ agent/                    Android 工程：com.xiaoyu.agent
-│  ├─ app/src/main/java/com/xiaoyu/agent/
-│  │  ├─ AgentService.kt     TCP 服务、连接管理、请求分发
-│  │  ├─ Protocol.kt         帧编解码（与 docs/protocol.md 一一对应）
-│  │  ├─ ScreenGrabber.kt    截图：fb0 直读 / screencap 回退
-│  │  ├─ TouchInjector.kt    sendevent 触摸注入（Protocol B，支持多点）
-│  │  ├─ KeyInjector.kt      按键注入
-│  │  ├─ InputSource.kt      /dev/input 探测：找触摸屏、解析轴范围
-│  │  └─ RootShell.kt        libsu 常驻 root shell
-│  └─ app/src/main/AndroidManifest.xml
-├─ engine/                   Python 包：xiaoyu
-│  ├─ xiaoyu/protocol.py     帧编解码 + 命令码常量
-│  ├─ xiaoyu/client.py       Agent 客户端：连接、请求、超时、重连
-│  ├─ xiaoyu/device.py       设备语义层：tap/swipe/key/screenshot
-│  ├─ xiaoyu/vision.py       OpenCV 匹配（单尺度，定分辨率优化）
-│  ├─ xiaoyu/rpc.py          JS ↔ Python 的 JSON-RPC
-│  ├─ xiaoyu/trace.py        执行轨迹录制（后期）
-│  ├─ xiaoyu/cli.py          命令行
-│  └─ pyproject.toml
-├─ runtime/                  Node：JS 运行时
-│  ├─ src/api.js             自研 API：帧 / 定位器 / 动作断言
-│  ├─ src/bridge.js          JSON-RPC 客户端
-│  └─ src/index.js           脚本入口
-├─ scripts/                  示例脚本
-├─ assets/                   模板图库（每张带 .json 标注来源分辨率）
-├─ tools/                    装机 / 连设备 / 取模板 脚本
-└─ docs/
+whx-automation/
+├─ app/              Automation App：权限 / 任务 / 状态 / 日志 / 服务
+├─ core/             Automation Core：截图 / 识别 / 触控 / QuickJS / API
+├─ helper/           Root Helper：纯 Java，打进 APK，由 su 拉起
+├─ tools/            PC 端命令行：部署 / 调试 / 打包
+├─ packer/           小精灵打包：壳 + 脚本 → 独立 APK
+├─ examples/         示例脚本
+├─ sdk/              TypeScript 类型定义（编辑器补全）
+├─ assets/           模板图库
+└─ docs/             项目书、架构、协议、API、路线、环境
 ```
 
-## 里程碑
+## 里程碑（对齐项目书第九节）
 
-| 阶段 | 内容 | 验收标准 |
+| 阶段 | 内容 | 交付成果 |
 | --- | --- | --- |
-| **M0** 规划 | 协议、架构、路线 | 本目录文档评审通过（当前） |
-| M1 连通 | agent `ping`+`screenshot`，engine `xiaoyu shot` | 1280×720 截图 ≤ 60ms |
-| M2 注入 | `sendevent` 点击/滑动/按键 | 单次点击 ≤ 15ms，能稳定 20 次/秒连点 |
-| M3 识别 | 找图、找色、waitFor、JS 脚本层跑通 | 脚本"找到图标并点击"全链路成功 |
-| M4 调试 | 轨迹录制、HTML 回放、截图 diff | 能定位"点了没生效"的那一步 |
-| M5 多开 | 多设备池、任务队列、云手机接入 | 单 PC 同时控 4 台 |
+| **〇**（当前） | 立项：项目书、架构、协议、API、路线 | 本目录文档 |
+| 一 · 工程基础 | Android Studio / SDK / NDK / CMake / Git / 首个 APK | 模拟器上能跑的 APK |
+| 二 · 截图引擎 | 截图、连续截图、区域截图、缓存、耗时与内存测量 | 可独立测试的截图模块 |
+| 三 · 图像识别 | 取色、颜色判断、单点/多点找色、相似色、扫描优化 | 可用的识别模块 |
+| 四 · 触控引擎 | 点击、长按、滑动、手势、多后端研究 | 能独立执行触控 |
+| 五 · 脚本引擎 | QuickJS 集成、Java 桥、基础 API、运行/停止、日志异常 | APK 能跑 PC 写的脚本 |
+| 六 · APK 整合 | 任务管理、脚本导入、内置脚本、状态界面 | 第一版完整 APK |
+| 七 · 跨架构 | x86_64 / ARM64 云手机 / ARM64 真机验证 | 跨架构版本 |
+| 八 · 优化扩展 | 识别提速、资源管理、内存、长期稳定性 | 正式版本 |
 
-## 环境现状
+验收标准与实测基线见 [docs/roadmap.md](docs/roadmap.md)。
 
-见 [docs/environment.md](docs/environment.md)。一句话：JDK 21 ✅、ADB ✅、雷电模拟器 ✅；
-**缺 Gradle wrapper 和 Android SDK（M1 开始前必须装）**。
+## 已完成的实测（2026-10-30，雷电 9 / Android 9 / 720×1280）
+
+这些数字不是估算，是这台机器上跑出来的，用于校正后续所有性能目标：
+
+| 项 | 结果 |
+| --- | --- |
+| 进程内 `SurfaceControl` 截图 720p | **11.4ms**（合成 3.5 + 硬件位图回读 5.7 + 拷像素 2.3） |
+| 9 条 evdev 事件写入 | **0.033ms** |
+| 完整 tap（按住 30ms） | **31.3ms** |
+| 对照：`adb exec-out screencap` | 141.6ms |
+| 对照：`input tap` | 134.6ms |
+
+顺带确认的三个环境事实：
+
+1. 雷电 9 **没有任何 framebuffer 节点**（`/dev/fb0` 不存在）→ 截图只能走 SurfaceControl
+2. `SurfaceControl.screenshot` 返回 **HARDWARE bitmap**，`getPixels()` 会直接抛异常，必须先回读
+3. 触摸轴是横屏坐标（`轴X=屏幕y`、`轴Y=屏幕x`），不交换就点偏且不报错
+
+## 环境
+
+JDK 21 ✅、Android SDK ✅（`D:\Android\Sdk`）、adb ✅、雷电模拟器 9 ✅（root 可用）。
+待装：NDK / CMake（阶段一）。详见 [docs/environment.md](docs/environment.md)。
 
 ## 免责
 
-仅用于自有设备、自有应用的自动化与测试。请遵守目标平台的服务条款。
+仅用于自有设备、自有应用的自动化与测试。遵守目标平台的服务条款。
