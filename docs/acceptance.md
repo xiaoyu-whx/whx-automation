@@ -9,7 +9,7 @@ API 28 / x86_64 / 720×1280 / 2026-10-31）。
 ./gradlew :core:test :helper:test :app:testDebugUnitTest
 ```
 
-**期望**：`BUILD SUCCESSFUL`，**59 个用例，0 失败**。
+**期望**：`BUILD SUCCESSFUL`，**64 个用例，0 失败**。
 
 | 模块 | 测试类 | 用例 | 覆盖 |
 | --- | --- | --- | --- |
@@ -20,6 +20,7 @@ API 28 / x86_64 / 720×1280 / 2026-10-31）。
 | app | ScriptConfigTest | 10 | 配置解析/顺序/默认值/容错/校验 |
 | app | ScheduleStoreTest | 6 | 定时任务解析、范围校验、下次触发 |
 | app | RunHistoryTest | 5 | 历史记录解析、竖线转义、可读输出 |
+| app | RunScriptReceiverTest | 5 | 运行时配置 key=value 解析（空格/等号/异常项） |
 
 ## 2. 构建
 

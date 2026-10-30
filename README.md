@@ -1,6 +1,6 @@
 # WHX Automation
 
-![tests](https://img.shields.io/badge/tests-59%20passed-brightgreen)
+![tests](https://img.shields.io/badge/tests-64%20passed-brightgreen)
 ![platform](https://img.shields.io/badge/platform-Android%209%2B-3ddc84)
 ![language](https://img.shields.io/badge/language-Java-orange)
 ![engine](https://img.shields.io/badge/JS%20engine-QuickJS-blue)
@@ -126,6 +126,15 @@ python tools/whx.py pack demo.js --label 小鱼 --pkg com.whx.sprite.demo
 ```
 
 脚本失败时退出码为 1，可直接接 CI。详见 [docs/cli.md](docs/cli.md)。
+
+## 界面
+
+| 主应用（脚本管理） | 小精灵（独立分发） | 桌面图标 |
+| --- | --- | --- |
+| ![主应用](docs/images/app-main.png) | ![小精灵](docs/images/sprite.png) | ![桌面](docs/images/launcher.png) |
+
+主应用负责导入/选择/运行/看日志；小精灵是打包后的成品，带自己的名字、图标与参数输入框，
+使用者不需要 PC，也不需要看代码。
 
 ## 构建与运行
 
