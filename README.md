@@ -1,6 +1,6 @@
 # WHX Automation
 
-![tests](https://img.shields.io/badge/tests-71%20passed-brightgreen)
+![tests](https://img.shields.io/badge/tests-72%20passed-brightgreen)
 ![platform](https://img.shields.io/badge/platform-Android%209%2B-3ddc84)
 ![language](https://img.shields.io/badge/language-Java-orange)
 ![engine](https://img.shields.io/badge/JS%20engine-QuickJS-blue)

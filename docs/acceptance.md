@@ -37,7 +37,7 @@ python tools/smoke.py --skip-build
 ./gradlew :core:test :helper:test :app:testDebugUnitTest
 ```
 
-**期望**：`BUILD SUCCESSFUL`，**71 个用例，0 失败**。
+**期望**：`BUILD SUCCESSFUL`，**72 个用例，0 失败**。
 
 | 模块 | 测试类 | 用例 | 覆盖 |
 | --- | --- | --- | --- |

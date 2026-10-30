@@ -93,6 +93,17 @@ public class ScriptConfigTest {
     }
 
     @Test
+    public void savedValueCanOverrideDefault() throws Exception {
+        // 持久化本身依赖 SharedPreferences，这里验证"覆盖"语义：
+        // 保存过的键必须盖掉 config.txt 里的默认值，未保存的保持默认
+        ScriptConfig c = parse("x|X|number|360" + System.lineSeparator() + "y|Y|number|640");
+        assertEquals("360", c.get("x"));
+        c.set("x", "111");
+        assertEquals("111", c.get("x"));
+        assertEquals("640", c.get("y"));
+    }
+
+    @Test
     public void emptyConfigIsEmpty() throws Exception {
         ScriptConfig c = parse("# 只有注释\n");
         assertTrue(c.isEmpty());

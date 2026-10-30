@@ -277,12 +277,13 @@ public class MainActivity extends Activity implements TaskManager.Observer {
 
             if (f.type == ScriptConfig.Type.SWITCH) {
                 Switch sw = new Switch(this);
-                sw.setChecked("true".equalsIgnoreCase(f.defaultValue));
+                // 用当前值（可能来自上次保存），不是 config.txt 的默认值
+                sw.setChecked("true".equalsIgnoreCase(scriptConfig.get(f.key)));
                 configInputs.put(f.key, sw);
                 configBox.addView(sw);
             } else {
                 EditText et = new EditText(this);
-                et.setText(f.defaultValue);
+                et.setText(scriptConfig.get(f.key));   // 同上：优先显示上次保存的值
                 et.setTextSize(13);
                 et.setSingleLine(true);
                 if (f.type == ScriptConfig.Type.NUMBER) {
@@ -352,6 +353,7 @@ public class MainActivity extends Activity implements TaskManager.Observer {
                     appendLog("[error] " + invalid);
                     return;
                 }
+                scriptConfig.save();     // 记住这次的参数，下次打开沿用
                 cfg = scriptConfig.snapshot();
                 Log.i(TAG, "配置: " + cfg);
             }

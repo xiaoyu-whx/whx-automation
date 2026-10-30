@@ -49,8 +49,11 @@ public final class ScriptConfig {
         }
     }
 
+    private static final String PREF = "whx_config";
+
     private final List<Field> fields;
     private final Map<String, String> values = new LinkedHashMap<>();
+    private Context context;
 
     private ScriptConfig(List<Field> fields) {
         this.fields = fields;
@@ -59,13 +62,49 @@ public final class ScriptConfig {
         }
     }
 
-    /** 从 assets/bundle/config.txt 读；不存在时返回空配置（普通模式）。 */
+    /**
+     * 从 assets/bundle/config.txt 读；不存在时返回空配置（普通模式）。
+     *
+     * <p>会用上次保存的值覆盖默认值 —— 用户改过的参数不该在重启后又变回默认。
+     */
     public static ScriptConfig load(Context context) {
+        ScriptConfig config;
         try (InputStream in = context.getAssets().open("bundle/config.txt")) {
-            return parse(new BufferedReader(new InputStreamReader(in, StandardCharsets.UTF_8)));
+            config = parse(new BufferedReader(new InputStreamReader(in, StandardCharsets.UTF_8)));
         } catch (IOException e) {
-            return new ScriptConfig(new ArrayList<>());
+            config = new ScriptConfig(new ArrayList<>());
         }
+        config.context = context.getApplicationContext();
+        config.restoreSaved();
+        return config;
+    }
+
+    /** 用上次保存的值覆盖默认值（只覆盖确实保存过的键）。 */
+    private void restoreSaved() {
+        if (context == null || fields.isEmpty()) {
+            return;
+        }
+        android.content.SharedPreferences prefs =
+                context.getSharedPreferences(PREF, Context.MODE_PRIVATE);
+        for (Field f : fields) {
+            String saved = prefs.getString("v_" + f.key, null);
+            if (saved != null) {
+                values.put(f.key, saved);
+            }
+        }
+    }
+
+    /** 记住当前值，下次打开小精灵时沿用。 */
+    public void save() {
+        if (context == null || fields.isEmpty()) {
+            return;
+        }
+        android.content.SharedPreferences.Editor editor =
+                context.getSharedPreferences(PREF, Context.MODE_PRIVATE).edit();
+        for (Field f : fields) {
+            editor.putString("v_" + f.key, get(f.key));
+        }
+        editor.apply();
     }
 
     static ScriptConfig parse(BufferedReader reader) throws IOException {
