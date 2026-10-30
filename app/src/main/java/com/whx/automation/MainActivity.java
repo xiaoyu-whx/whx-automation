@@ -342,7 +342,14 @@ public class MainActivity extends Activity implements TaskManager.Observer {
                 cfg = scriptConfig.snapshot();
                 Log.i(TAG, "配置: " + cfg);
             }
-            boolean started = tasks.start(name, code, cfg);
+            int retries = 0;
+            if (cfg != null && cfg.containsKey("retry")) {
+                try {
+                    retries = Integer.parseInt(cfg.get("retry").trim());
+                } catch (NumberFormatException ignored) {
+                }
+            }
+            boolean started = tasks.start(name, code, cfg, retries);
             appendLog(started ? "[run] 启动 " + name : "[warn] 启动失败");
             refreshStatus();
         } catch (Exception e) {
