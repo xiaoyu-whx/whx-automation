@@ -118,3 +118,75 @@ adb shell su -c id          # 应输出 uid=0(root)
 node --version
 python -c "import cv2, numpy; print(cv2.__version__, numpy.__version__)"
 ```
+
+## 凭据与推送（2026-10-30 配置）
+
+### 网络
+
+本机直连 GitHub 会 TLS 失败，必须走本地代理（Clash 之类，监听 `127.0.0.1:7897`）：
+
+```bash
+curl -x http://127.0.0.1:7897 -o /dev/null -w "%{http_code}
+" https://github.com   # 期望 200
+```
+
+代理**不稳定**：同一个请求可能一次 000 一次 200，所以 `git push` 偶尔报
+`schannel: failed to receive handshake, SSL/TLS connection failed` —— **重试即可**，
+不是配置错误。仓库里配了 `http.proxy`（仅本仓库，不动全局）。
+
+### 凭据
+
+token（PAT，`repo` 权限）已存进 **Windows 凭据管理器**，`git push` 不再需要贴 token。
+
+存储方式：`git-credential-wincred`（Git 自带）
+
+```bash
+HELPER="$(git --exec-path)/git-credential-wincred.exe"
+printf 'protocol=https
+host=github.com
+username=x-access-token
+password=<TOKEN>
+
+' | "$HELPER" store
+```
+
+凭据管理器里的条目（`cmdkey /list`，注意 MSYS 下要 `MSYS_NO_PATHCONV=1` 否则 `/list` 会被当路径）：
+
+```
+LegacyGeneric:target=git:https://github.com
+LegacyGeneric:target=git:https://x-access-token@github.com
+```
+
+### 坑：忘了关掉的交互式选择器
+
+DSH 自带的 git 在系统级 gitconfig 里写了：
+
+```
+credential.helper=helper-selector
+```
+
+这个选择器是**交互式**的，非交互环境（脚本、自动化）会直接**挂死**，`git push` 卡住没有任何输出。
+trace 里能看到：
+
+```
+run_command: 'git credential-helper-selector get'
+```
+
+解决办法是在**仓库级**先把凭据链清空再加 wincred：
+
+```bash
+git config --local --replace-all credential.helper ""       # 空值 = 清空列表
+git config --local --add credential.helper "$HELPER"
+```
+
+### 撤销 token 后怎么清理
+
+```bash
+HELPER="$(git --exec-path)/git-credential-wincred.exe"
+printf 'protocol=https
+host=github.com
+
+' | "$HELPER" erase
+```
+
+或者：控制面板 → 凭据管理器 → Windows 凭据 → 删除 `git:https://github.com`。
