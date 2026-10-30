@@ -51,15 +51,13 @@ public class RunScriptReceiver extends BroadcastReceiver {
                     if (trimmed.isEmpty()) {
                         continue;
                     }
-                    items.add(new String[]{trimmed,
-                            store.load(new ScriptStore.Script(trimmed,
-                                    ScriptStore.Source.IMPORTED, 0))});
+                    items.add(new String[]{trimmed, loadCode(store, trimmed)});
                 }
                 boolean started = TaskManager.get(app).startChain(items);
                 Log.i(TAG, "请求运行任务链（" + items.size() + " 个）→ "
                         + (started ? "已启动" : "被拒绝（已有任务）"));
             } else {
-                String code = store.load(new ScriptStore.Script(script, ScriptStore.Source.IMPORTED, 0));
+                String code = loadCode(store, script);
                 boolean started = TaskManager.get(app).start(script, code, config);
                 Log.i(TAG, "请求运行 " + script + " → " + (started ? "已启动" : "被拒绝（已有任务）"));
             }
@@ -67,6 +65,18 @@ public class RunScriptReceiver extends BroadcastReceiver {
             // 失败要吵：脚本不存在等错误必须落到日志，不能让调用方以为跑起来了
             Log.e(TAG, "运行失败: " + script, e);
         }
+    }
+
+    /**
+     * 取脚本源码：小精灵只有绑定脚本（在 assets/bundle 里），没有导入目录，
+     * 所以先看是不是绑定脚本，否则按导入脚本处理。
+     */
+    private static String loadCode(ScriptStore store, String name) throws java.io.IOException {
+        ScriptStore.Bundle bundle = store.bundle();
+        if (bundle != null && bundle.scriptName.equals(name)) {
+            return store.loadBundleScript(name);
+        }
+        return store.load(new ScriptStore.Script(name, ScriptStore.Source.IMPORTED, 0));
     }
 
     /** "x=100,y=640" → map。格式错误直接忽略该项，不阻断运行。 */

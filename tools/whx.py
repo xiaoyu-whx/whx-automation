@@ -26,9 +26,21 @@ import sys
 import time
 
 APP_ID = "com.whx.automation"
-ACTIVITY = APP_ID + "/com.whx.automation.MainActivity"
+
+# 组件必须用**绝对类名**：打包器只改包名（manifest package），类名是 AGP 按 namespace
+# 展开的 com.whx.automation.*。用相对名（.RunScriptReceiver）在改过包名的小精灵里
+# 会指向不存在的组件：广播返回成功但什么都不会发生（实测踩过）。
+CLASS_PREFIX = "com.whx.automation."
+MAIN_ACTIVITY = CLASS_PREFIX + "MainActivity"
+RUN_RECEIVER = CLASS_PREFIX + "RunScriptReceiver"
+SCHEDULE_RECEIVER = CLASS_PREFIX + "schedule.ScheduleReceiver"
+A11Y_CLASS = CLASS_PREFIX + "access.WhxAccessibilityService"
+
+
+def component(pkg: str, cls: str) -> str:
+    return "%s/%s" % (pkg, cls)
 REMOTE_TMP = "/data/local/tmp/whx_script.js"
-LOG_TAGS = ["WHX/Script", "WHX/Task"]
+LOG_TAGS = ["WHX/Script", "WHX/Task", "WHX/RunScript"]
 DONE_MARK = "WHX/Task: done"
 
 
@@ -82,9 +94,9 @@ def pick_device(adb: Adb, wanted: str | None) -> Adb:
     return Adb(devices[0][0])
 
 
-def app_uid(adb: Adb) -> str:
+def app_uid(adb: Adb, pkg: str = APP_ID) -> str:
     """拿应用 data 目录的属主 uid:gid，推脚本后要把权限改回去。"""
-    out = adb.su("stat -c %%u:%%g /data/data/%s/files" % APP_ID, check=False)
+    out = adb.su("stat -c %%u:%%g /data/data/%s/files" % pkg, check=False)
     out = out.strip()
     if not re.match(r"^\d+:\d+$", out):
         raise SystemExit("拿不到应用 uid（root 没授权？输出：%r）" % out)
@@ -110,37 +122,82 @@ def cmd_devices(args):
 
 
 def cmd_ls(args):
+    """列出目标包里的脚本与模板。
+
+    从 APK 里真实读取（pull 一份再解 zip），而不是写死列表 ——
+    小精灵的内置脚本跟主应用完全不同，写死会误导。
+    """
     adb = pick_device(Adb(), args.serial)
-    internal = adb.su("ls /data/data/%s/files/scripts 2>/dev/null" % APP_ID, check=False)
-    print("内置脚本（assets，只读）:")
-    for name in ("demo.js", "long_task.js", "stress.js"):
-        print("  " + name)
-    print("已导入脚本（/data/data/%s/files/scripts）:" % APP_ID)
-    names = [n.strip() for n in internal.splitlines() if n.strip()]
-    print("\n".join("  " + n for n in names) if names else "  （无）")
+    pkg = args.package
+
+    raw = adb.shell("pm path %s" % pkg, check=False).strip()
+    if not raw.startswith("package:"):
+        print("包不存在或未安装: %s" % pkg)
+        return 1
+    apk = raw.split("package:", 1)[1].splitlines()[0].strip()
+    print("包: %s" % pkg)
+    print("APK: %s" % apk)
+
+    import tempfile
+    import zipfile
+    local = None
+    builtin, templates, bundle = [], [], False
+    try:
+        with tempfile.NamedTemporaryFile(suffix=".apk", delete=False) as tmp:
+            local = tmp.name
+        adb.sh("pull", apk, local)
+        with zipfile.ZipFile(local) as z:
+            names = z.namelist()
+        builtin = sorted(n[len("assets/scripts/"):] for n in names
+                         if n.startswith("assets/scripts/") and n.endswith(".js"))
+        templates = sorted(n[len("assets/templates/"):] for n in names
+                           if n.startswith("assets/templates/") and not n.endswith("/"))
+        bundle = "assets/bundle/bundle.json" in names
+    finally:
+        if local:
+            try:
+                os.remove(local)
+            except OSError:
+                pass
+
+    print("内置脚本（打包在 APK 内，只读）:")
+    print(chr(10).join("  " + n for n in builtin) if builtin else "  （无）")
+    if templates:
+        print("内置模板:")
+        print(chr(10).join("  " + n for n in templates))
+    if bundle:
+        print("这是小精灵包（含 assets/bundle/bundle.json）")
+
+    imported = adb.su("ls /data/data/%s/files/scripts 2>/dev/null" % pkg, check=False)
+    names2 = [n.strip() for n in imported.splitlines() if n.strip()]
+    print("已导入脚本（/data/data/%s/files/scripts）:" % pkg)
+    print(chr(10).join("  " + n for n in names2) if names2 else "  （无）")
     return 0
 
 
 def do_run(adb: Adb, src: str, timeout: float, wait: bool = True,
            echo: bool = True, cold: bool = False, push_only: bool = False,
-           config: str = "") -> int:
+           config: str = "", pkg: str = APP_ID) -> int:
     """推脚本 → 冷启动运行 → 跟日志。返回脚本的成败（0 成功 / 1 失败）。"""
     name = os.path.basename(src)
 
     if not os.path.exists(src):
         if echo:
             print("本地没有 %s，按设备上已有的脚本名处理" % src)
-        installed = adb.su("ls /data/data/%s/files/scripts" % APP_ID, check=False)
+        installed = adb.su("ls /data/data/%s/files/scripts" % pkg, check=False)
         if name not in installed.split():
-            raise SystemExit("设备上也没有 %s" % name)
+            # 小精灵的脚本在 APK 的 assets/bundle 里，不在导入目录；
+            # 不做硬性拦截，交给应用去判断（找不到会明确报错）
+            if echo:
+                print("导入目录里没有 %s，按「包内绑定脚本」继续（找不到会报错）" % name)
     else:
         if echo:
             print("推送脚本 %s → 设备" % name)
         adb.sh("push", src, REMOTE_TMP)
-        uid = app_uid(adb)
-        adb.su("cp %s /data/data/%s/files/scripts/%s" % (REMOTE_TMP, APP_ID, name))
-        adb.su("chown %s /data/data/%s/files/scripts/%s" % (uid, APP_ID, name))
-        adb.su("chmod 660 /data/data/%s/files/scripts/%s" % (APP_ID, name))
+        uid = app_uid(adb, pkg)
+        adb.su("cp %s /data/data/%s/files/scripts/%s" % (REMOTE_TMP, pkg, name))
+        adb.su("chown %s /data/data/%s/files/scripts/%s" % (uid, pkg, name))
+        adb.su("chmod 660 /data/data/%s/files/scripts/%s" % (pkg, name))
         adb.su("rm -f %s" % REMOTE_TMP)
 
     # 冷启动：先 force-stop 再带参数启动。
@@ -153,14 +210,14 @@ def do_run(adb: Adb, src: str, timeout: float, wait: bool = True,
     proc = start_logcat(adb) if wait else None
     if cold:
         # 冷启动只在需要"干净状态"时用：会杀掉进程，无障碍服务会被系统摘掉
-        adb.shell("am force-stop %s" % APP_ID, check=False)
+        adb.shell("am force-stop %s" % pkg, check=False)
         time.sleep(0.4)
     # 用广播而不是 Activity intent：实测界面不在前台时 am start --es 会静默不执行
     # -f 0x00000020 = FLAG_INCLUDE_STOPPED_PACKAGES：
     # 应用被 force-stop 过会进入 stopped 状态，默认收不到广播（实测卡住无输出）
     extra = (" --es config '%s'" % config) if config else ""
     adb.shell("am broadcast -a com.whx.automation.RUN_SCRIPT -f 0x00000020 "
-              "-n %s/.RunScriptReceiver --es script %s%s" % (APP_ID, name, extra))
+              "-n %s --es script %s%s" % (component(pkg, RUN_RECEIVER), name, extra))
     if not wait:
         return 0
     return consume_log(proc, wait_done=True, timeout=timeout)
@@ -173,24 +230,27 @@ def cmd_run(args):
 
     if len(scripts) == 1:
         return do_run(adb, scripts[0], args.timeout, wait=not args.no_wait, cold=args.cold,
-                      config=",".join(args.config))
+                      config=",".join(args.config), pkg=args.package)
 
     # 多脚本 = 任务链：全部推送后再一次性广播，设备端顺序执行
     names = []
     for src in scripts:
-        do_run(adb, src, args.timeout, wait=False, echo=True, push_only=True)
+        do_run(adb, src, args.timeout, wait=False, echo=True, push_only=True,
+               pkg=args.package)
         names.append(os.path.basename(src))
     print("任务链：%s" % " → ".join(names))
 
     if args.no_wait:
         adb.shell("am broadcast -a com.whx.automation.RUN_SCRIPT -f 0x00000020 "
-                  "-n %s/.RunScriptReceiver --es script %s" % (APP_ID, ",".join(names)))
+                  "-n %s --es script %s"
+                  % (component(args.package, RUN_RECEIVER), ",".join(names)))
         print("已启动（不等结果）。用 `python tools/whx.py log` 看日志")
         return 0
 
     proc = start_logcat(adb)
     adb.shell("am broadcast -a com.whx.automation.RUN_SCRIPT -f 0x00000020 "
-              "-n %s/.RunScriptReceiver --es script %s" % (APP_ID, ",".join(names)))
+              "-n %s --es script %s"
+              % (component(args.package, RUN_RECEIVER), ",".join(names)))
     return consume_log(proc, wait_done=True, timeout=args.timeout * max(1, len(names)),
                        done_marker="chain finished")
 
@@ -267,8 +327,11 @@ def consume_log(proc, wait_done: bool, timeout: float = 120,
             if noisy_stack_frame(line):
                 continue
             print(clean_log(line))
-            if "E WHX/Script" in line:
-                failed = True
+            if " E WHX/" in line:
+                failed = True        # 任何本项目的 E 级日志都算失败
+            if " E WHX/RunScript" in line:
+                # 请求没被接受（脚本不存在等），任务根本不会开始，不用等 done
+                break
             if wait_done and done_marker in line:
                 break
             if time.time() - started > timeout:
@@ -340,7 +403,7 @@ def read_pref(xml: str, key: str) -> str:
 def cmd_schedule(args):
     """定时任务：每天某时刻运行脚本（设备端 AlarmManager 触发，不需要 PC 在线）。"""
     adb = pick_device(Adb(), args.serial)
-    receiver = APP_ID + "/.schedule.ScheduleReceiver"
+    receiver = component(args.package, SCHEDULE_RECEIVER)
 
     if args.action == "add":
         hh, mm = args.time.split(":")
@@ -359,7 +422,7 @@ def cmd_schedule(args):
         return 0
 
     # list：直接读应用的 SharedPreferences，比从日志里抓更可靠
-    xml = adb.su("cat /data/data/%s/shared_prefs/whx_schedules.xml" % APP_ID, check=False)
+    xml = adb.su("cat /data/data/%s/shared_prefs/whx_schedules.xml" % args.package, check=False)
     raw = read_pref(xml, "entries")
     if not raw.strip():
         print("没有定时任务")
@@ -378,18 +441,15 @@ def cmd_schedule(args):
     return 0
 
 
-A11Y_CLASS = "com.whx.automation.access.WhxAccessibilityService"
-
-
 def a11y_service(pkg: str) -> str:
     """小精灵是独立包名，无障碍服务也要按包名拼。"""
-    return "%s/%s" % (pkg, A11Y_CLASS)
+    return component(pkg, A11Y_CLASS)
 
 
 def cmd_ui(args):
     """无障碍服务开关：脚本读界面文字的前提。"""
     adb = pick_device(Adb(), args.serial)
-    A11Y_SERVICE = a11y_service(args.package)
+    A11Y_SERVICE = a11y_service(args.package or APP_ID)
     if args.action == "enable":
         current = adb.shell("settings get secure enabled_accessibility_services",
                             check=False).strip()
@@ -422,7 +482,7 @@ def cmd_ui(args):
 def cmd_history(args):
     """查运行历史：无人值守任务出问题后，事后追溯用。"""
     adb = pick_device(Adb(), args.serial)
-    xml = adb.su("cat /data/data/%s/shared_prefs/whx_history.xml" % APP_ID, check=False)
+    xml = adb.su("cat /data/data/%s/shared_prefs/whx_history.xml" % args.package, check=False)
     raw = read_pref(xml, "entries")
     if not raw.strip():
         print("还没有运行记录")
@@ -467,6 +527,8 @@ def main(argv=None) -> int:
 
     p = argparse.ArgumentParser(prog="whx", description="WHX Automation PC 端工具链")
     p.add_argument("--serial", default=None, help="指定设备序列号")
+    p.add_argument("--package", default=APP_ID,
+                   help="目标应用包名（小精灵是独立包名），默认 com.whx.automation")
     sub = p.add_subparsers(dest="cmd", required=True)
 
     sp = sub.add_parser("devices", help="列出设备")
@@ -508,8 +570,8 @@ def main(argv=None) -> int:
 
     sp = sub.add_parser("ui", help="无障碍服务开关（读界面文字）")
     sp.add_argument("action", nargs="?", default="status", choices=["enable", "disable", "status"])
-    sp.add_argument("--package", default=APP_ID,
-                    help="目标包名（小精灵是独立包名），默认 com.whx.automation")
+    sp.add_argument("--package", default=None,
+                    help="覆盖全局 --package")
     sp.set_defaults(func=cmd_ui)
 
     sp = sub.add_parser("history", help="查看运行历史")

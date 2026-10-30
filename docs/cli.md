@@ -5,6 +5,10 @@
 
 ## 命令
 
+全局 `--package`：默认 `com.whx.automation`；**操作小精灵时用它的包名**（小精灵是独立应用，
+脚本、参数、定时、历史都各存一份）：
+
+
 ```bash
 python tools/smoke.py               # 端到端冒烟：构建 → 单测 → 安装 → 12 项检查
 ```
@@ -221,6 +225,20 @@ python tools/whx.py history --limit 5
 无人值守（定时任务/小精灵）出问题时人不在现场，事后必须能回答：
 **什么时候跑的、成没成功、为什么失败**。历史只存这四项（最多 20 条），
 不存日志全文（logcat 会被系统回卷覆盖）。
+
+## 坑：组件类名不能用相对名
+
+打包器只改 **manifest 的 package**，组件类名是 AGP 按 **namespace** 展开的
+`com.whx.automation.*`。所以对改过包名的小精灵发广播必须写绝对类名：
+
+```bash
+# 错：广播"成功"但什么都不会发生
+am broadcast -n com.whx.sprite.icon/.RunScriptReceiver ...
+# 对
+am broadcast -n com.whx.sprite.icon/com.whx.automation.RunScriptReceiver ...
+```
+
+`whx` 内部已统一用绝对类名（`CLASS_PREFIX` 常量），这个坑只会在手写 adb 命令时踩到。
 
 ## 日志显示策略
 

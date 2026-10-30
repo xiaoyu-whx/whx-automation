@@ -48,6 +48,19 @@ public final class InputProbe {
         if (out == null || out.isEmpty()) {
             throw new IllegalStateException("getevent -pl 无输出");
         }
+        return parseGetevent(out);
+    }
+
+    /**
+     * 解析 {@code getevent -pl} 的输出（抽成静态方法便于单元测试）。
+     *
+     * <p>设备差异全在这一层：不同机型设备数、顺序、是否带 ABS_MT_SLOT 都不一样，
+     * 用真实输出样本做回归比在设备上试错划算得多。
+     */
+    public static InputProbe parseGetevent(String out) {
+        if (out == null || out.isEmpty()) {
+            throw new IllegalStateException("getevent -pl 无输出");
+        }
 
         String current = null;
         String name = "";
