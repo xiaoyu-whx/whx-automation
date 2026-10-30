@@ -22,8 +22,17 @@ debug 下测出的 0.044ms/次调用开销其实是"没优化的版本"，真实
 
 ## 签名
 
-密钥在 `~/.whx/release.jks`（**故意放在仓库外**），口令写在 `app/build.gradle`，
-首次构建前生成：
+密钥在 `~/.whx/release.jks`（**故意放在仓库外**）。口令不写死，按优先级取值：
+
+```
+环境变量 WHX_RELEASE_PASS  >  -PwhxReleasePass=…  >  默认值（仅便于首次本地构建）
+别名同理：WHX_RELEASE_ALIAS，默认 release
+```
+
+> ⚠️ 本仓库已公开。默认口令写在构建脚本里只是为了让首次构建能跑通，
+> **正式发布前必须改成自己的口令**（`export WHX_RELEASE_PASS=…`）并妥善备份密钥。
+
+首次构建前生成密钥：
 
 ```bash
 mkdir -p ~/.whx

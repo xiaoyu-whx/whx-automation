@@ -18,10 +18,15 @@ android {
         // 发布签名：与打包器共用同一密钥，便于小精灵与主包相互覆盖升级。
         // 密钥不进仓库（.gitignore）；生成方式见 docs/release.md
         releaseKey {
+            // 口令不写死：优先环境变量 WHX_RELEASE_PASS，其次 -PwhxReleasePass，
+            // 最后回退到默认值（仅便于本地首次构建）。仓库是公开的，
+            // 正式发布请务必改成自己的口令并保管好密钥。
+            def releasePass = System.getenv("WHX_RELEASE_PASS")
+                    ?: (project.findProperty("whxReleasePass") ?: "whxrelease")
             storeFile file(System.getProperty("user.home") + "/.whx/release.jks")
-            storePassword = "whxrelease"
-            keyAlias = "release"
-            keyPassword = "whxrelease"
+            storePassword releasePass
+            keyAlias System.getenv("WHX_RELEASE_ALIAS") ?: "release"
+            keyPassword releasePass
         }
     }
 
