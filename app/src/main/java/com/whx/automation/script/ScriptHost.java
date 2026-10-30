@@ -26,7 +26,7 @@ public final class ScriptHost {
 
     /** 把 api 的方法包装成全局函数，脚本里可以直接 log('x') / click(1,2)。 */
     private static final String BOOTSTRAP = String.join(System.lineSeparator(),
-            "function refresh(){return api.refresh()}",
+            "function refresh(x,y,w,h){return (x===undefined)?api.refresh():api.refreshRegion(x,y,w,h)}",
             "function screenWidth(){return api.screenWidth()}",
             "function screenHeight(){return api.screenHeight()}",
             "function frameAge(){return api.frameAge()}",
@@ -38,6 +38,7 @@ public final class ScriptHost {
             "function findImage(name,th){return api.findImage(name,th)}",
             "function findImageFile(p,th){return api.findImageFile(p,th)}",
             "function findImageAsset(p,th){return api.findImageAsset(p,th)}",
+            "function findImageAssetRegion(p,th,x,y,w,h){return api.findImageAssetRegion(p,th,x,y,w,h)}",
             "function click(x,y){return api.click(x,y)}",
             "function clickHold(x,y,ms){return api.clickHold(x,y,ms)}",
             "function longClick(x,y,ms){return api.longClick(x,y,ms)}",

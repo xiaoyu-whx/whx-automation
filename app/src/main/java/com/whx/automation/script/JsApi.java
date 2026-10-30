@@ -13,6 +13,9 @@ public interface JsApi {
     // 帧
     void refresh();
 
+    /** 只抓一块区域（x,y,w,h），比全屏快；后续识别都在这一块上做。 */
+    void refreshRegion(double x, double y, double w, double h);
+
     int screenWidth();
 
     int screenHeight();
@@ -39,6 +42,10 @@ public interface JsApi {
 
     /** 用打包进 APK 的模板找图（路径相对 assets，例如 "templates/btn.png"）。 */
     String findImageAsset(String assetPath, double threshold);
+
+    /** 在指定区域里用 assets 模板找图。 */
+    String findImageAssetRegion(String assetPath, double threshold,
+                               double rx, double ry, double rw, double rh);
 
     // 触控
     void click(double x, double y);

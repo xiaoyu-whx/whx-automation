@@ -50,6 +50,17 @@ public final class ScriptApi implements JsApi {
         }
     }
 
+    @Override
+    public void refreshRegion(double x, double y, double w, double h) {
+        host.checkStop();
+        int[] region = {(int) x, (int) y, (int) w, (int) h};
+        try {
+            frame = screen.capture(region);
+        } catch (ScreenSource.ScreenException e) {
+            throw new IllegalStateException("区域截图失败: " + e.getMessage(), e);
+        }
+    }
+
     private Frame frame() {
         if (frame == null) {
             refresh();
@@ -126,6 +137,34 @@ public final class ScriptApi implements JsApi {
         com.whx.automation.core.vision.Hit hit =
                 Vision.findImage(frame(), tpl, size[0], size[1], threshold, null);
         return hit == null ? null : hit.center().x + "," + hit.center().y;
+    }
+
+    @Override
+    public String findImageAssetRegion(String assetPath, double threshold,
+                                       double rx, double ry, double rw, double rh) {
+        host.checkStop();
+        int[] region = {(int) rx, (int) ry, (int) rw, (int) rh};
+        try (java.io.InputStream in = host.context().getAssets().open(assetPath)) {
+            android.graphics.Bitmap bmp = android.graphics.BitmapFactory.decodeStream(in);
+            if (bmp == null) {
+                host.log("error", "模板资源不是有效图片: " + assetPath);
+                throw new IllegalArgumentException("模板资源不是有效图片: " + assetPath);
+            }
+            try {
+                int w = bmp.getWidth();
+                int h = bmp.getHeight();
+                int[] pixels = new int[w * h];
+                bmp.getPixels(pixels, 0, w, 0, 0, w, h);
+                com.whx.automation.core.vision.Hit hit =
+                        Vision.findImage(frame(), pixels, w, h, threshold, region);
+                return hit == null ? null : hit.center().x + "," + hit.center().y;
+            } finally {
+                bmp.recycle();
+            }
+        } catch (java.io.IOException e) {
+            host.log("error", "模板资源不存在: " + assetPath);
+            throw new IllegalArgumentException("模板资源不存在: " + assetPath, e);
+        }
     }
 
     @Override
