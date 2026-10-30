@@ -129,7 +129,8 @@ public final class ScriptApi implements JsApi {
     public void click(double x, double y) {
         host.checkStop();
         try {
-            input.tap((int) x, (int) y, 40);
+            // 按住时长是点击延迟的下限：30ms 实测可被系统接受，40ms 更稳
+            input.tap((int) x, (int) y, 30);
         } catch (InputBackend.InputException e) {
             throw new IllegalStateException("点击失败: " + e.getMessage(), e);
         }
