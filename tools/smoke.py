@@ -199,12 +199,14 @@ def main(argv=None) -> int:
             code, out = r.whx("--package", sprite_pkg, "run", "demo.js")
         if installed and code == 0 and "done ok=true" in out:
             r.check("小精灵：安装并运行绑定脚本", True, "")
-        elif "helper" in out and ("授权" in out or "连接 helper 失败" in out):
+        elif any(k in out for k in ("helper", "ECONNREFUSED", "授权", "su 请求")):
             # 新装的包要过一遍 root 授权；这台机器的 su 拒绝后会拉黑，无法全自动
             r.record("小精灵：安装并运行绑定脚本", SKIP,
                      "需人工在授权弹窗点「允许」后重跑")
         else:
             r.check("小精灵：安装并运行绑定脚本", False, "退出码 %d" % code)
+            for line in out.strip().splitlines()[-3:]:
+                print("      " + line[:110])
 
         code, out = r.whx("--package", sprite_pkg, "schedule", "add", "demo.js", "--time", "11:00")
         code2, out2 = r.whx("--package", sprite_pkg, "schedule", "list")
