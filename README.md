@@ -9,7 +9,7 @@
 > Android 自动化运行平台：**PC 上开发，Android 上运行，可打包成独立 APK 脱离 PC 执行**。
 > 全部自研，不复刻任何现有工具的实现。
 
-**当前状态：阶段十一 完成**（设备端定时任务，触发精度 6ms）。剩余：ARM64 云手机/真机验证。
+**当前状态：阶段十二 完成**（release 壳可分发，R8 后 JS 桥接快 10×）。剩余：ARM64 云手机/真机验证。
 
 📄 最高依据：[项目书](docs/project-charter.md) —— 本文档集与项目书冲突时，以项目书为准。
 
@@ -128,7 +128,8 @@ python tools/whx.py pack demo.js --label 小鱼 --pkg com.whx.sprite.demo
 
 ```bash
 # 依赖：JDK 17+（本机 21）、Android SDK（platform 34 + build-tools 34）、Gradle 用仓库自带 wrapper
-./gradlew assembleDebug                 # 产物 app/build/outputs/apk/debug/app-debug.apk
+./gradlew assembleDebug                 # 开发包（夹带调试信息）
+./gradlew assembleRelease               # 发布包（R8 优化，桥接快 ~10×）
 adb install -r app/build/outputs/apk/debug/app-debug.apk
 
 # 单元测试（纯 JVM，不需要设备）

@@ -14,13 +14,26 @@ android {
         versionName "0.1.0"
     }
 
+    signingConfigs {
+        // 发布签名：与打包器共用同一密钥，便于小精灵与主包相互覆盖升级。
+        // 密钥不进仓库（.gitignore）；生成方式见 docs/release.md
+        releaseKey {
+            storeFile file(System.getProperty("user.home") + "/.whx/release.jks")
+            storePassword = "whxrelease"
+            keyAlias = "release"
+            keyPassword = "whxrelease"
+        }
+    }
+
     buildTypes {
         debug {
             // 阶段一只要跑起来，不做混淆
             minifyEnabled false
         }
         release {
-            minifyEnabled false
+            signingConfig signingConfigs.releaseKey
+            minifyEnabled true
+            shrinkResources true
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
         }
     }

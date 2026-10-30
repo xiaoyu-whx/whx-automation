@@ -279,7 +279,8 @@ def main(argv=None) -> int:
     except Exception:
         pass
     p = argparse.ArgumentParser(description="把小脚本打包成独立小精灵 APK")
-    p.add_argument("--shell", required=True, help="壳 APK（我们的 app-debug.apk）")
+    p.add_argument("--shell", required=True,
+                   help="壳 APK（建议 app/build/outputs/apk/release/app-release.apk）")
     p.add_argument("--script", required=True, help="要绑定的脚本 .js")
     p.add_argument("--label", required=True, help="小精灵显示名（应用名）")
     p.add_argument("--pkg", required=True, help="小精灵包名，例如 com.whx.sprite.demo")

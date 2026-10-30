@@ -373,7 +373,7 @@ def main(argv=None) -> int:
 
     sp = sub.add_parser("pack", help="打包成小精灵 APK")
     sp.add_argument("script")
-    sp.add_argument("--shell", default="app/build/outputs/apk/debug/app-debug.apk")
+    sp.add_argument("--shell", default="app/build/outputs/apk/release/app-release.apk")
     sp.add_argument("--label", required=True)
     sp.add_argument("--pkg", required=True)
     sp.add_argument("--out", default=None)
