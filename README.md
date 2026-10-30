@@ -9,7 +9,7 @@
 > Android 自动化运行平台：**PC 上开发，Android 上运行，可打包成独立 APK 脱离 PC 执行**。
 > 全部自研，不复刻任何现有工具的实现。
 
-**当前状态：小精灵打包器已完成**（0.77 秒出包，可改包名/应用名，与壳共存）。剩余：ARM64 云手机/真机验证、JVM 单元测试。
+**当前状态：阶段九 完成**（PC 端工具链 `whx` 一条命令跑脚本）。剩余：ARM64 云手机/真机验证。
 
 📄 最高依据：[项目书](docs/project-charter.md) —— 本文档集与项目书冲突时，以项目书为准。
 
@@ -109,6 +109,17 @@ whx-automation/
 1. 雷电 9 **没有任何 framebuffer 节点**（`/dev/fb0` 不存在）→ 截图只能走 SurfaceControl
 2. `SurfaceControl.screenshot` 返回 **HARDWARE bitmap**，`getPixels()` 会直接抛异常，必须先回读
 3. 触摸轴是横屏坐标（`轴X=屏幕y`、`轴Y=屏幕x`），不交换就点偏且不报错
+
+## PC 端工具链
+
+```bash
+python tools/whx.py devices                      # 设备/root/分辨率
+python tools/whx.py run demo.js                  # 推脚本 → 运行 → 跟日志
+python tools/whx.py shot dist/a.png              # 截图到 PC
+python tools/whx.py pack demo.js --label 小鱼 --pkg com.whx.sprite.demo
+```
+
+脚本失败时退出码为 1，可直接接 CI。详见 [docs/cli.md](docs/cli.md)。
 
 ## 构建与运行
 

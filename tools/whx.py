@@ -1,0 +1,280 @@
+#!/usr/bin/env python3
+"""whx —— PC 端开发工具链。
+
+项目书的原则是「PC 上编程、设备只负责运行」，这个脚本把两边的往返做顺：
+推脚本、跑脚本、看日志、抓截图、打包小精灵，全部一条命令。
+
+用法：
+    python tools/whx.py devices
+    python tools/whx.py ls
+    python tools/whx.py run app/src/main/assets/scripts/demo.js
+    python tools/whx.py run demo.js --no-wait
+    python tools/whx.py log
+    python tools/whx.py shot dist/screen.png
+    python tools/whx.py pack app/src/main/assets/scripts/demo.js --label 小鱼 --pkg com.whx.sprite.demo
+
+依赖：adb 在 PATH 里，设备已 root 且已给应用授权。
+"""
+from __future__ import annotations
+
+import argparse
+import os
+import re
+import shutil
+import subprocess
+import sys
+import time
+
+APP_ID = "com.whx.automation"
+ACTIVITY = APP_ID + "/com.whx.automation.MainActivity"
+REMOTE_TMP = "/data/local/tmp/whx_script.js"
+LOG_TAGS = ["WHX/Script", "WHX/Task"]
+DONE_MARK = "WHX/Task: done"
+
+
+# ---------------------------------------------------------------- adb 封装
+class Adb:
+    def __init__(self, serial: str | None = None):
+        self.adb = shutil.which("adb") or "adb"
+        self.serial = serial
+
+    def _base(self):
+        cmd = [self.adb]
+        if self.serial:
+            cmd += ["-s", self.serial]
+        return cmd
+
+    def sh(self, *args, check=True, timeout=60, binary=False):
+        cmd = self._base() + list(args)
+        result = subprocess.run(cmd, capture_output=True, timeout=timeout)
+        if check and result.returncode != 0:
+            raise RuntimeError("%s 失败: %s" % (" ".join(args),
+                                                result.stderr.decode("utf-8", "replace").strip()))
+        return result.stdout if binary else result.stdout.decode("utf-8", "replace")
+
+    def shell(self, cmd, check=True, timeout=60):
+        return self.sh("shell", cmd, check=check, timeout=timeout)
+
+    def su(self, cmd, check=True, timeout=60):
+        """在 root 下执行（su 已永久授权则不会弹窗）。"""
+        return self.sh("shell", "su -c '%s'" % cmd.replace("'", "'\\''"), check=check, timeout=timeout)
+
+
+def parse_devices(adb: Adb) -> list[tuple[str, str]]:
+    out = adb.sh("devices")
+    found = []
+    for line in out.splitlines()[1:]:
+        line = line.strip()
+        if not line or "\t" not in line:
+            continue
+        serial, state = line.split("\t", 1)
+        if state.strip() == "device":
+            found.append((serial, state.strip()))
+    return found
+
+
+def pick_device(adb: Adb, wanted: str | None) -> Adb:
+    if wanted:
+        return Adb(wanted)
+    devices = parse_devices(adb)
+    if not devices:
+        raise SystemExit("没有可用设备：先 adb connect 或启动模拟器")
+    return Adb(devices[0][0])
+
+
+def app_uid(adb: Adb) -> str:
+    """拿应用 data 目录的属主 uid:gid，推脚本后要把权限改回去。"""
+    out = adb.su("stat -c %%u:%%g /data/data/%s/files" % APP_ID, check=False)
+    out = out.strip()
+    if not re.match(r"^\d+:\d+$", out):
+        raise SystemExit("拿不到应用 uid（root 没授权？输出：%r）" % out)
+    return out
+
+
+# ---------------------------------------------------------------- 子命令
+def cmd_devices(args):
+    adb = Adb()
+    devices = parse_devices(adb)
+    if not devices:
+        print("没有可用设备")
+        return 1
+    for serial, _ in devices:
+        d = Adb(serial)
+        model = d.shell("getprop ro.product.model", check=False).strip()
+        sdk = d.shell("getprop ro.build.version.sdk", check=False).strip()
+        root = d.su("id -u", check=False).strip()
+        size = d.shell("wm size", check=False).strip().splitlines()[-1]
+        print("%-18s %-22s API %-3s root=%s  %s"
+              % (serial, model, sdk, "yes" if root == "0" else "no", size))
+    return 0
+
+
+def cmd_ls(args):
+    adb = pick_device(Adb(), args.serial)
+    internal = adb.su("ls /data/data/%s/files/scripts 2>/dev/null" % APP_ID, check=False)
+    print("内置脚本（assets，只读）:")
+    for name in ("demo.js", "long_task.js", "stress.js"):
+        print("  " + name)
+    print("已导入脚本（/data/data/%s/files/scripts）:" % APP_ID)
+    names = [n.strip() for n in internal.splitlines() if n.strip()]
+    print("\n".join("  " + n for n in names) if names else "  （无）")
+    return 0
+
+
+def cmd_run(args):
+    sys.stdout.reconfigure(line_buffering=True)
+    adb = pick_device(Adb(), args.serial)
+    src = args.script
+    name = os.path.basename(src)
+
+    if not os.path.exists(src):
+        # 允许直接写脚本名（跑设备上已有的）
+        print("本地没有 %s，按设备上的脚本名处理" % src)
+        installed = adb.su("ls /data/data/%s/files/scripts" % APP_ID, check=False)
+        if name not in installed.split():
+            raise SystemExit("设备上也没有 %s" % name)
+    else:
+        print("推送脚本 %s → 设备" % name)
+        adb.sh("push", src, REMOTE_TMP)
+        uid = app_uid(adb)
+        adb.su("cp %s /data/data/%s/files/scripts/%s" % (REMOTE_TMP, APP_ID, name))
+        adb.su("chown %s /data/data/%s/files/scripts/%s" % (uid, APP_ID, name))
+        adb.su("chmod 660 /data/data/%s/files/scripts/%s" % (APP_ID, name))
+        adb.su("rm -f %s" % REMOTE_TMP)
+
+    # 冷启动：先 force-stop 再带参数启动。
+    # 实测热启动（activity 已在栈顶）时 onNewIntent 那条路会静默不执行，
+    # 冷启动可以保证 onCreate 路径必然生效，也让每次运行的状态干净。
+    print("启动界面并运行 %s" % name)
+    adb.shell("am force-stop %s" % APP_ID, check=False)
+    time.sleep(0.4)
+    adb.shell("am start -n %s --es script %s --ez run true" % (ACTIVITY, name))
+    if args.no_wait:
+        print("已启动（不等结果）。用 `python tools/whx.py log` 看日志")
+        return 0
+
+    return follow_log(adb, wait_done=True, timeout=args.timeout)
+
+
+def follow_log(adb: Adb, wait_done: bool, timeout: float = 120) -> int:
+    cmd = adb._base() + ["logcat", "-T", "1"] + sum([["-s", t] for t in LOG_TAGS], [])
+    proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
+                            encoding="utf-8", errors="replace")
+    started = time.time()
+    failed = False
+    try:
+        for line in proc.stdout:
+            line = line.rstrip("\n")
+            if not any(tag in line for tag in LOG_TAGS):
+                continue
+            if noisy_stack_frame(line):
+                continue
+            print(clean_log(line))
+            if "E WHX/Script" in line:
+                failed = True
+            if DONE_MARK in line:
+                break
+            if time.time() - started > timeout:
+                print("（超时 %.0f 秒，停止跟随；任务可能还在跑）" % timeout)
+                break
+    except KeyboardInterrupt:
+        print("\n（已停止跟随日志，任务仍在设备上运行）")
+    finally:
+        proc.terminate()
+    return 1 if failed else 0
+
+
+def noisy_stack_frame(line: str) -> bool:
+    """丢掉 Java 栈帧，只留 JS 行号。
+
+    完整栈在 logcat 里还能查到；命令行只显示对脚本作者有用的那一层，
+    否则一个 JS 报错会刷十几行 java.lang.Thread.run。
+    """
+    if '\t' + 'at ' not in line:
+        return False
+    return 'at JavaScript' not in line
+
+
+def clean_log(line: str) -> str:
+    """把 logcat 前缀去掉，只留标签与内容。"""
+    m = re.match(r"^\S+\s+\S+\s+\d+\s+\d+\s+[VDIWEF]\s+(\S+)\s*:\s*(.*)$", line)
+    if m:
+        return "[%s] %s" % (m.group(1), m.group(2))
+    return line
+
+
+def cmd_log(args):
+    adb = pick_device(Adb(), args.serial)
+    print("跟随日志（Ctrl-C 退出）")
+    return follow_log(adb, wait_done=False, timeout=args.timeout)
+
+
+def cmd_shot(args):
+    adb = pick_device(Adb(), args.serial)
+    out_dir = os.path.dirname(os.path.abspath(args.path))
+    if out_dir:
+        os.makedirs(out_dir, exist_ok=True)
+    with open(args.path, "wb") as fh:
+        fh.write(adb.sh("exec-out", "screencap", "-p", binary=True, timeout=60))
+    print("截图已保存: %s（%.1f KB）" % (args.path, os.path.getsize(args.path) / 1024.0))
+    return 0
+
+
+def cmd_pack(args):
+    packer = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "packer", "make_sprite.py")
+    cmd = [sys.executable, packer,
+           "--shell", args.shell,
+           "--script", args.script,
+           "--label", args.label,
+           "--pkg", args.pkg,
+           "--out", args.out]
+    if args.no_autostart:
+        cmd.append("--no-autostart")
+    return subprocess.call(cmd)
+
+
+def main(argv=None) -> int:
+    try:
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    except Exception:
+        pass
+
+    p = argparse.ArgumentParser(prog="whx", description="WHX Automation PC 端工具链")
+    p.add_argument("--serial", default=None, help="指定设备序列号")
+    sub = p.add_subparsers(dest="cmd", required=True)
+
+    sp = sub.add_parser("devices", help="列出设备")
+    sp.set_defaults(func=cmd_devices)
+
+    sp = sub.add_parser("ls", help="列出设备上的脚本")
+    sp.set_defaults(func=cmd_ls)
+
+    sp = sub.add_parser("run", help="推送并运行脚本")
+    sp.add_argument("script", help="本地脚本路径，或设备上已有的脚本名")
+    sp.add_argument("--no-wait", action="store_true", help="不等结果，立即返回")
+    sp.add_argument("--timeout", type=float, default=180, help="等待秒数，默认 180")
+    sp.set_defaults(func=cmd_run)
+
+    sp = sub.add_parser("log", help="跟随脚本日志")
+    sp.add_argument("--timeout", type=float, default=3600)
+    sp.set_defaults(func=cmd_log)
+
+    sp = sub.add_parser("shot", help="截图到 PC")
+    sp.add_argument("path", help="保存路径，例如 dist/screen.png")
+    sp.set_defaults(func=cmd_shot)
+
+    sp = sub.add_parser("pack", help="打包成小精灵 APK")
+    sp.add_argument("script")
+    sp.add_argument("--shell", default="app/build/outputs/apk/debug/app-debug.apk")
+    sp.add_argument("--label", required=True)
+    sp.add_argument("--pkg", required=True)
+    sp.add_argument("--out", default=None)
+    sp.add_argument("--no-autostart", action="store_true")
+    sp.set_defaults(func=cmd_pack)
+
+    args = p.parse_args(argv)
+    return args.func(args)
+
+
+if __name__ == "__main__":
+    sys.exit(main())

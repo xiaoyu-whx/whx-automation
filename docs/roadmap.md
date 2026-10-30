@@ -355,6 +355,35 @@
 
 实现要点与 AXML 格式坑见 [packer.md](packer.md)。
 
+## 阶段九 · PC 端工具链（2026-10-30）
+
+项目书要求「PC 编程、设备只运行」，但之前写完脚本还要手动 adb push + 在手机上点运行。
+本阶段补上 `tools/whx.py`，把往返做顺。
+
+| 命令 | 实测 |
+| --- | --- |
+| `whx devices` | 列设备 / root / 分辨率 |
+| `whx ls` | 设备上的脚本（内置 + 导入） |
+| `whx run <脚本>` | 推送 → 运行 → 日志流式回显 → 结束退出（正常 0 / 失败 1） |
+| `whx log` | 跟随日志 |
+| `whx shot <路径>` | 截图到 PC（117KB） |
+| `whx pack <脚本> --label --pkg` | 打包小精灵 |
+
+**实测**：正常脚本 `done ok=true cost=405ms` 退出码 0；报错脚本回显
+`QuickJsException: cannot read property 'split' of null` 与 `at JavaScript.<eval>(?:5)`
+（JS 行号），退出码 1 —— 可以直接接 CI。
+
+**踩坑**
+
+1. **热启动 intent 静默失效**：Activity 已在栈顶时 `am start --es script x --ez run true`
+   会把 intent 投给 onNewIntent，但脚本不跑、一行日志都没有。
+   对策：CLI 改确定性冷启动（先 `am force-stop` 再 start），并在 App 里补日志。
+2. **root 拷贝脚本要改属主**：应用私有目录属主 `u0_a54`，root 拷进去后应用读不到，
+   必须 `chown`/`chmod` 回原属主。
+3. **logcat 的 Java 栈对脚本作者没用**：命令行只保留异常首行 + `at JavaScript.<eval>(?:行号)`。
+
+详见 [cli.md](cli.md)。
+
 ## 风险与对策（对齐项目书第十一节）
 
 | 风险 | 我们的实测认知 | 对策 |

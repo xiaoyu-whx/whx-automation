@@ -32,6 +32,10 @@ import java.util.List;
 public class MainActivity extends Activity implements TaskManager.Observer {
 
     private static final int REQ_PICK_SCRIPT = 1001;
+    /** PC 工具链用：指定要跑哪个脚本。 */
+    public static final String EXTRA_SCRIPT = "script";
+    /** PC 工具链用：启动后立即运行。 */
+    public static final String EXTRA_AUTORUN = "run";
     private static final String TAG = "WHX/Main";
     private static final int LOG_LINES = 14;
 
@@ -128,9 +132,45 @@ public class MainActivity extends Activity implements TaskManager.Observer {
         }
         tasks.addObserver(this);
 
+        handleIntentExtras(getIntent());
+
         if (bundle != null && bundle.autoStart) {
             // 小精灵：打开即跑
             ui.postDelayed(this::runSelected, 600);
+        }
+    }
+
+    @Override
+    protected void onNewIntent(Intent intent) {
+        super.onNewIntent(intent);
+        setIntent(intent);
+        handleIntentExtras(intent);
+    }
+
+    /**
+     * 处理 PC 工具链传入的参数：{@code --es script xxx.js --ez run true}。
+     *
+     * <p>这样 `whx run demo.js` 就能"推脚本 → 选中 → 立即运行"，不需要在手机上点。
+     */
+    private void handleIntentExtras(Intent intent) {
+        if (intent == null) {
+            return;
+        }
+        String name = intent.getStringExtra(EXTRA_SCRIPT);
+        Log.i(TAG, "handleIntentExtras: script=" + name
+                + " autorun=" + intent.getBooleanExtra(EXTRA_AUTORUN, false));
+        if (name == null || name.isEmpty()) {
+            return;
+        }
+        if (bundle != null) {
+            appendLog("[warn] 小精灵模式不接受外部脚本参数: " + name);
+            return;
+        }
+        selected = name;
+        refreshScripts();
+        appendLog("[intent] 指定脚本 " + name);
+        if (intent.getBooleanExtra(EXTRA_AUTORUN, false)) {
+            ui.postDelayed(this::runSelected, 400);
         }
     }
 
@@ -168,9 +208,16 @@ public class MainActivity extends Activity implements TaskManager.Observer {
         if (selected.isEmpty()) {
             selected = scripts.get(0).name;
         }
+        // 内置与导入可能有同名脚本：只给第一个匹配的加选中标记，
+        // 否则列表里会出现两个 ▶（实测），运行逻辑取的也是第一个，保持一致。
+        boolean marked = false;
         for (ScriptStore.Script s : scripts) {
+            boolean isSelected = !marked && s.name.equals(selected);
+            if (isSelected) {
+                marked = true;
+            }
             Button b = new Button(this);
-            b.setText((s.name.equals(selected) ? "▶ " : "   ") + s);
+            b.setText((isSelected ? "▶ " : "   ") + s);
             b.setTextSize(13);
             b.setAllCaps(false);
             b.setOnClickListener(v -> {
@@ -188,7 +235,8 @@ public class MainActivity extends Activity implements TaskManager.Observer {
             return;
         }
         if (tasks.state() != TaskManager.State.IDLE) {
-            appendLog("[warn] 已有任务在运行");
+            Log.w(TAG, "拒绝运行：当前状态 " + tasks.state());
+            appendLog("[warn] 已有任务在运行（" + tasks.state() + "）");
             return;
         }
         try {
@@ -206,6 +254,7 @@ public class MainActivity extends Activity implements TaskManager.Observer {
                     }
                 }
                 if (target == null) {
+                    Log.w(TAG, "脚本不存在: " + selected);
                     appendLog("[error] 脚本不存在: " + selected);
                     return;
                 }
