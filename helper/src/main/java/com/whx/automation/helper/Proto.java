@@ -22,6 +22,7 @@ public final class Proto {
     public static final byte OP_SWIPE = 3;     // argb: count, count×(x,y), durationMs
     public static final byte OP_PING = 4;      // argb: 无
     public static final byte OP_INFO = 5;      // argb: 无
+    public static final byte OP_KEY = 6;       // argb: keyCode
     public static final byte OP_SHUTDOWN = 9;  // argb: 无
 
     /** 错误码（与 docs/protocol.md 的错误语义保持一致） */

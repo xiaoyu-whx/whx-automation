@@ -19,6 +19,8 @@ import android.widget.TextView;
 
 import com.whx.automation.capture.HelperScreenSource;
 import com.whx.automation.core.CoreInfo;
+import com.whx.automation.core.FrameDiff;
+import com.whx.automation.input.HelperInput;
 import com.whx.automation.core.vision.Hit;
 import com.whx.automation.core.vision.Point;
 import com.whx.automation.core.vision.Vision;
@@ -42,6 +44,7 @@ public class MainActivity extends Activity {
     private final Handler ui = new Handler(Looper.getMainLooper());
     private TextView status;
     private ImageView preview;
+    private Button serviceButton;
     private HelperScreenSource source;
 
     @Override
@@ -78,7 +81,8 @@ public class MainActivity extends Activity {
         buttons.setOrientation(LinearLayout.HORIZONTAL);
         buttons.setPadding(0, dp(10), 0, dp(10));
 
-        buttons.addView(button("启动服务", v -> toggleService()), weight());
+        serviceButton = button("启动服务", v -> toggleService());
+        buttons.addView(serviceButton, weight());
         buttons.addView(button("截图一次", v -> runCapture(1)), weight());
         buttons.addView(button("基准 100", v -> runCapture(100)), weight());
         buttons.addView(button("区域", v -> runRegion()), weight());
@@ -90,6 +94,14 @@ public class MainActivity extends Activity {
         buttons2.addView(button("识别自检", v -> runVisionSelfTest()), weight());
         buttons2.addView(button("找图基准", v -> runImageBench()), weight());
         root.addView(buttons2);
+
+        LinearLayout buttons3 = new LinearLayout(this);
+        buttons3.setOrientation(LinearLayout.HORIZONTAL);
+        buttons3.setPadding(0, 0, 0, dp(8));
+        buttons3.addView(button("点击自检", v -> runTapSelfTest()), weight());
+        buttons3.addView(button("连点基准", v -> runTapBench()), weight());
+        buttons3.addView(button("滑动", v -> runSwipeTest()), weight());
+        root.addView(buttons3);
 
         preview = new ImageView(this);
         preview.setAdjustViewBounds(true);
@@ -342,6 +354,113 @@ public class MainActivity extends Activity {
                 ui.post(() -> status.setText(buildStatusText() + LS + LS + "[找图基准失败] " + e));
             }
         }, "image-bench").start();
+    }
+
+    // ------------------------------------------------------------ 触控自检
+    /** 点击自检：点自己的「启动服务」按钮，用"屏幕是否变化 + 服务状态"双重验证。 */
+    private void runTapSelfTest() {
+        new Thread(() -> {
+            String LS = System.lineSeparator();
+            StringBuilder sb = new StringBuilder("点击自检").append(LS);
+            try {
+                HelperInput input = new HelperInput(this);
+                Frame before = source.capture(null);
+
+                int[] xy = centerOf(serviceButton);
+                long t0 = System.nanoTime();
+                input.tap(xy[0], xy[1], 40);
+                double tapMs = (System.nanoTime() - t0) / 1e6;
+
+                sleepMs(600);
+                Frame after = source.capture(null);
+                FrameDiff.Result diff = FrameDiff.compare(before, after);
+                boolean running = AutomationService.isRunning();
+
+                sb.append(String.format("  点击 (%d,%d) 耗时 %.1f ms%n", xy[0], xy[1], tapMs));
+                sb.append(String.format("  屏幕变化 %s%n", diff));
+                sb.append(String.format("  服务状态 = %s  点击生效 = %s%n",
+                        running ? "运行中" : "已停止", running));
+
+                // 还原
+                input.tap(xy[0], xy[1], 40);
+                sleepMs(400);
+                ui.post(() -> status.setText(buildStatusText() + LS + LS + sb));
+            } catch (Exception e) {
+                Log.e(TAG, "点击自检失败", e);
+                ui.post(() -> status.setText(buildStatusText() + LS + LS + "[点击自检失败] " + e));
+            }
+        }, "tap-test").start();
+    }
+
+    /** 连点基准：在空白处连点 10 次，测单次点击延迟与吞吐。 */
+    private void runTapBench() {
+        new Thread(() -> {
+            String LS = System.lineSeparator();
+            StringBuilder sb = new StringBuilder("连点基准（10 次，间隔 50ms）").append(LS);
+            try {
+                HelperInput input = new HelperInput(this);
+                double[] ms = new double[10];
+                long start = System.nanoTime();
+                for (int i = 0; i < ms.length; i++) {
+                    long t0 = System.nanoTime();
+                    input.tap(360, 300, 30);
+                    ms[i] = (System.nanoTime() - t0) / 1e6;
+                    sleepMs(50);
+                }
+                double total = (System.nanoTime() - start) / 1e6;
+                Arrays.sort(ms);
+                sb.append(String.format("  单次 P50 %.1f ms  P99 %.1f ms  min %.1f%n",
+                        ms[5], ms[9], ms[0]));
+                sb.append(String.format("  10 次总耗时 %.0f ms（%.1f 次/秒）%n",
+                        total, ms.length * 1000.0 / total));
+                ui.post(() -> status.setText(buildStatusText() + LS + LS + sb));
+            } catch (Exception e) {
+                Log.e(TAG, "连点基准失败", e);
+                ui.post(() -> status.setText(buildStatusText() + LS + LS + "[连点基准失败] " + e));
+            }
+        }, "tap-bench").start();
+    }
+
+    /** 滑动：在列表中上下滑，报告耗时与屏幕变化。 */
+    private void runSwipeTest() {
+        new Thread(() -> {
+            String LS = System.lineSeparator();
+            StringBuilder sb = new StringBuilder("滑动测试").append(LS);
+            try {
+                HelperInput input = new HelperInput(this);
+                Frame before = source.capture(null);
+
+                int[][] path = {{360, 900}, {360, 600}, {360, 300}};
+                long t0 = System.nanoTime();
+                input.swipe(path, 300);
+                double swipeMs = (System.nanoTime() - t0) / 1e6;
+
+                sleepMs(500);
+                Frame after = source.capture(null);
+                FrameDiff.Result diff = FrameDiff.compare(before, after);
+
+                sb.append(String.format("  滑动 (360,900)→(360,300) 用时 %.0f ms%n", swipeMs));
+                sb.append(String.format("  屏幕变化 %s%n", diff));
+                ui.post(() -> status.setText(buildStatusText() + LS + LS + sb));
+            } catch (Exception e) {
+                Log.e(TAG, "滑动测试失败", e);
+                ui.post(() -> status.setText(buildStatusText() + LS + LS + "[滑动测试失败] " + e));
+            }
+        }, "swipe-test").start();
+    }
+
+    private int[] centerOf(android.view.View v) {
+        int[] loc = new int[2];
+        v.getLocationOnScreen(loc);
+        return new int[]{loc[0] + v.getWidth() / 2, loc[1] + v.getHeight() / 2};
+    }
+
+    private static void sleepMs(int ms) {
+        try {
+            Thread.sleep(ms);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        }
     }
 
     private void toggleService() {

@@ -164,18 +164,25 @@ soft.getPixels(pixels, 0, w, 0, 0, w, h);
 **缓存与复用**（项目书 4.1 要求）：`Frame` 对象持有 `int[]` 像素与尺寸，同一帧内多次
 识别共享同一份像素；只有显式 `refresh()` 才重新抓帧。避免"每次找色都重新截图"。
 
-### 5.2 注入：evdev 直写 + 轴坐标交换
+### 5.2 注入：evdev 直写（轴坐标**不交换**，每轴独立缩放）
 
-本机实测 `/dev/input/event2`：
+本机实测 `/dev/input/event2`：`ABS_MT_POSITION_X` max=1279、`ABS_MT_POSITION_Y` max=719、
+`ABS_MT_SLOT` max=15。
+
+**坐标映射规则（实测确认，不是猜的）**：框架把**每个轴各自**按自己的 absMax 缩放到屏幕
+对应维度，**不做轴交换**：
 
 ```
-ABS_MT_POSITION_X : 0..1279   ← 屏幕「高」
-ABS_MT_POSITION_Y : 0..719    ← 屏幕「宽」
-ABS_MT_SLOT       : 0..15     ← 最多 16 点
+注入 raw(X=463, Y=114) → 应用内触摸监听器收到 (260, 154)
+260 = 463 / 1279 × 720        （X 轴 → 屏幕宽）
+154 = 114 / 719 × 1280 − 状态栏（Y 轴 → 屏幕高）
 ```
 
-**映射：`轴X = 屏幕y`，`轴Y = 屏幕x`**（已用"注入后跳转到同一页面"验证）。
-不交换不会报错，只会静默点偏 —— 这类问题是"失败要吵"原则存在的理由。
+> **踩坑记录**：早期根据 `absX=1279 ≈ 屏幕高 1280` 推断"轴是横屏坐标、必须交换"，
+> 结论是**错的**。错判的代价很隐蔽：加上交换后注入坐标落到窗口外，
+> 表现是**只收到 `ACTION_DOWN`、收不到 `ACTION_UP`**，按钮不响应 —— 而不会报任何错。
+> 定位手段：在应用里挂一个 `OnTouchListener` 打印事件坐标，一次注入就能反推真实映射。
+> 结论写进代码注释：`swapAxes` 保留为开关，默认关闭。
 
 事件结构（64 位设备 `struct input_event` 24 字节，小端）：
 
@@ -183,8 +190,8 @@ ABS_MT_SLOT       : 0..15     ← 最多 16 点
 [0..7] tv_sec   [8..15] tv_usec   [16..17] type   [18..19] code   [20..23] value
 ```
 
-一次 tap 的 9 条事件：`ABS_MT_SLOT 0` → `TRACKING_ID 1` → `POSITION_X <屏幕y>` →
-`POSITION_Y <屏幕x>` → `BTN_TOUCH 1` → `SYN_REPORT` → （按住 30~40ms）→
+一次 tap 的 9 条事件：`ABS_MT_SLOT 0` → `TRACKING_ID <id>` → `POSITION_X <缩放后x>` →
+`POSITION_Y <缩放后y>` → `BTN_TOUCH 1` → `SYN_REPORT` → （按住 30~40ms）→
 `TRACKING_ID -1` → `BTN_TOUCH 0` → `SYN_REPORT`。
 
 **其它必知**：节点号重启后会变（`event2`→`event3`），每次启动必须重新探测；

@@ -28,6 +28,7 @@ public final class HelperMain {
     public static final String VERSION = "0.2.0";
 
     private static volatile boolean running = true;
+    private static Injector injector;
 
     public static void main(String[] args) {
         int port = 0;
@@ -109,6 +110,18 @@ public final class HelperMain {
                     handleCapture(out, args);
                     break;
 
+                case Proto.OP_TAP:
+                    handleTap(out, args);
+                    break;
+
+                case Proto.OP_SWIPE:
+                    handleSwipe(out, args);
+                    break;
+
+                case Proto.OP_KEY:
+                    handleKey(out, args);
+                    break;
+
                 case Proto.OP_SHUTDOWN:
                     writeFrame(out, Proto.ERR_NONE, new byte[]{1});
                     running = false;
@@ -161,6 +174,96 @@ public final class HelperMain {
         writeFrame(out, payload);
     }
 
+    private static void handleTap(DataOutputStream out, ByteBuffer a) throws IOException {
+        int x = a.getInt();
+        int y = a.getInt();
+        int hold = a.getInt();
+        int sw = a.getInt();
+        int sh = a.getInt();
+        long t0 = System.nanoTime();
+        try {
+            injector(sw, sh).tap(x, y, hold);
+        } catch (Throwable t) {
+            writeFrame(out, Proto.ERR_IO, ("点击失败: " + t).getBytes("UTF-8"));
+            return;
+        }
+        replyMs(out, t0);
+    }
+
+    private static void handleSwipe(DataOutputStream out, ByteBuffer a) throws IOException {
+        int n = a.getInt();
+        if (n < 2 || n > 64) {
+            writeFrame(out, Proto.ERR_BAD_REQUEST, "点数非法".getBytes("UTF-8"));
+            return;
+        }
+        int[][] pts = new int[n][2];
+        for (int i = 0; i < n; i++) {
+            pts[i][0] = a.getInt();
+            pts[i][1] = a.getInt();
+        }
+        int duration = a.getInt();
+        int sw = a.getInt();
+        int sh = a.getInt();
+        long t0 = System.nanoTime();
+        try {
+            injector(sw, sh).swipe(pts, duration);
+        } catch (Throwable t) {
+            writeFrame(out, Proto.ERR_IO, ("滑动失败: " + t).getBytes("UTF-8"));
+            return;
+        }
+        replyMs(out, t0);
+    }
+
+    private static void handleKey(DataOutputStream out, ByteBuffer a) throws IOException {
+        int code = a.getInt();
+        long t0 = System.nanoTime();
+        try {
+            ensureInjector();
+            injector.key(code);
+        } catch (Throwable t) {
+            writeFrame(out, Proto.ERR_IO, ("按键失败: " + t).getBytes("UTF-8"));
+            return;
+        }
+        replyMs(out, t0);
+    }
+
+    private static void replyMs(DataOutputStream out, long t0) throws IOException {
+        double ms = (System.nanoTime() - t0) / 1e6;
+        writeFrame(out, Proto.ERR_NONE, ByteBuffer.allocate(8).putDouble(ms).array());
+    }
+
+    /** 按屏幕尺寸惰性创建注入器；尺寸变化（旋转/改分辨率）时重建。 */
+    private static synchronized Injector injector(int screenW, int screenH) throws Exception {
+        if (injector != null
+                && injector.probe() != null
+                && sameScreen(screenW, screenH)) {
+            return injector;
+        }
+        if (injector != null) {
+            injector.close();
+            injector = null;
+        }
+        InputProbe probe = InputProbe.detect(screenW, screenH);
+        log("input probe: " + probe);
+        injector = new Injector(probe, screenW, screenH);
+        lastScreenW = screenW;
+        lastScreenH = screenH;
+        return injector;
+    }
+
+    private static void ensureInjector() throws Exception {
+        if (injector == null) {
+            throw new IllegalStateException("尚未初始化（先发一次 tap 带上屏幕尺寸）");
+        }
+    }
+
+    private static int lastScreenW;
+    private static int lastScreenH;
+
+    private static boolean sameScreen(int w, int h) {
+        return w == lastScreenW && h == lastScreenH;
+    }
+
     private static String info() {
         return "name=whx-helper"
                 + " version=" + VERSION
@@ -168,7 +271,8 @@ public final class HelperMain {
                 + " sdk=" + Build.VERSION.SDK_INT
                 + " release=" + Build.VERSION.RELEASE
                 + " abi=" + (Build.SUPPORTED_ABIS.length > 0 ? Build.SUPPORTED_ABIS[0] : "?")
-                + " capture=" + Capture.apiName();
+                + " capture=" + Capture.apiName()
+                + " input=" + (injector != null ? injector.probe().devicePath : "unprobed");
     }
 
     /** 整帧写出（长度前缀 + 负载）。 */

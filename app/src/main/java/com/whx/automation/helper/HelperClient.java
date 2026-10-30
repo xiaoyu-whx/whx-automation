@@ -82,6 +82,53 @@ public final class HelperClient implements Closeable {
                 (t1 - t0) / 1e6, (t2 - t1) / 1e6);
     }
 
+    /** 点击 / 长按。返回 helper 侧耗时（毫秒）。 */
+    public double tap(int x, int y, int holdMs, int screenW, int screenH) throws IOException {
+        ByteBuffer req = ByteBuffer.allocate(1 + 20);
+        req.put(Proto.OP_TAP);
+        req.putInt(x);
+        req.putInt(y);
+        req.putInt(holdMs);
+        req.putInt(screenW);
+        req.putInt(screenH);
+        return readMs(sendAndRead(req.array()));
+    }
+
+    /** 滑动。points 为屏幕坐标序列。 */
+    public double swipe(int[][] points, int durationMs, int screenW, int screenH) throws IOException {
+        ByteBuffer req = ByteBuffer.allocate(1 + 4 + points.length * 8 + 12);
+        req.put(Proto.OP_SWIPE);
+        req.putInt(points.length);
+        for (int[] p : points) {
+            req.putInt(p[0]);
+            req.putInt(p[1]);
+        }
+        req.putInt(durationMs);
+        req.putInt(screenW);
+        req.putInt(screenH);
+        return readMs(sendAndRead(req.array()));
+    }
+
+    /** 按键。 */
+    public double key(int keyCode) throws IOException {
+        ByteBuffer req = ByteBuffer.allocate(1 + 4);
+        req.put(Proto.OP_KEY);
+        req.putInt(keyCode);
+        return readMs(sendAndRead(req.array()));
+    }
+
+    private byte[] sendAndRead(byte[] payload) throws IOException {
+        write(payload);
+        return readResponse();
+    }
+
+    private static double readMs(byte[] data) {
+        if (data.length >= 8) {
+            return ByteBuffer.wrap(data).getDouble();
+        }
+        return -1;
+    }
+
     // ------------------------------------------------------------- 内部实现
     private void send(byte op) throws IOException {
         write(new byte[]{op});
