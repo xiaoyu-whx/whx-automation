@@ -31,14 +31,13 @@ public final class Injector {
     private final FileOutputStream out;
     private final ByteBuffer buf = ByteBuffer.allocate(24).order(ByteOrder.LITTLE_ENDIAN);
     private final InputProbe probe;
-    private final int screenW;
-    private final int screenH;
+    private final AxisMapper mapper;
     private int nextTrackingId = 1;
 
     public Injector(InputProbe probe, int screenW, int screenH) throws Exception {
         this.probe = probe;
-        this.screenW = screenW;
-        this.screenH = screenH;
+        // 实测结论：每轴各自按 absMax 缩放，不做轴交换（见 AxisMapper 注释）
+        this.mapper = new AxisMapper(screenW, screenH, probe.absMaxX, probe.absMaxY, false);
         this.out = new FileOutputStream(probe.devicePath);
     }
 
@@ -112,41 +111,12 @@ public final class Injector {
     }
 
     // --------------------------------------------------------------- 坐标映射
-    /**
-     * 屏幕坐标 → 轴坐标。
-     *
-     * <p><b>结论来自实测（用应用内触摸监听器验证）</b>：框架对**每个轴各自**按自己的
-     * absMax 缩放到屏幕对应维度，不做轴交换：
-     * <pre>
-     *   注入 raw(X=463, Y=114) → 应用收到 (260, 154)
-     *   260 = 463/1279×720    （X 轴 → 屏幕宽）
-     *   154 = 114/719×1280 − 状态栏（Y 轴 → 屏幕高）
-     * </pre>
-     * 所以映射就是恒等 + 比例缩放。之前"必须交换"的判断是被一次巧合误导的结论，
-     * 真正的失败现象是：只收到 ACTION_DOWN、收不到 ACTION_UP —— 因为坐标偏到了窗口外。
-     *
-     * <p>{@code swapAxes} 保留为开关：个别设备的触点面板方向不同才需要打开。
-     */
     private int axisX(int x, int y) {
-        int v = swapAxes ? y : x;
-        int range = swapAxes ? screenH : screenW;
-        return scale(v, range, probe.absMaxX);
+        return mapper.axisX(x, y);
     }
 
     private int axisY(int x, int y) {
-        int v = swapAxes ? x : y;
-        int range = swapAxes ? screenW : screenH;
-        return scale(v, range, probe.absMaxY);
-    }
-
-    private static final boolean swapAxes = false;
-
-    private static int scale(int value, int screenRange, int absMax) {
-        if (screenRange <= 1) return 0;
-        long v = (long) value * absMax / (screenRange - 1);
-        if (v < 0) v = 0;
-        if (v > absMax) v = absMax;
-        return (int) v;
+        return mapper.axisY(x, y);
     }
 
     private static double[] pointOnPath(int[][] pts, double t) {

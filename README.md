@@ -1,5 +1,11 @@
 # WHX Automation
 
+![tests](https://img.shields.io/badge/tests-38%20passed-brightgreen)
+![platform](https://img.shields.io/badge/platform-Android%209%2B-3ddc84)
+![language](https://img.shields.io/badge/language-Java-orange)
+![engine](https://img.shields.io/badge/JS%20engine-QuickJS-blue)
+![status](https://img.shields.io/badge/stage-六阶段完成-9cf)
+
 > Android 自动化运行平台：**PC 上开发，Android 上运行，可打包成独立 APK 脱离 PC 执行**。
 > 全部自研，不复刻任何现有工具的实现。
 
@@ -103,6 +109,22 @@ whx-automation/
 1. 雷电 9 **没有任何 framebuffer 节点**（`/dev/fb0` 不存在）→ 截图只能走 SurfaceControl
 2. `SurfaceControl.screenshot` 返回 **HARDWARE bitmap**，`getPixels()` 会直接抛异常，必须先回读
 3. 触摸轴是横屏坐标（`轴X=屏幕y`、`轴Y=屏幕x`），不交换就点偏且不报错
+
+## 构建与运行
+
+```bash
+# 依赖：JDK 17+（本机 21）、Android SDK（platform 34 + build-tools 34）、Gradle 用仓库自带 wrapper
+./gradlew assembleDebug                 # 产物 app/build/outputs/apk/debug/app-debug.apk
+adb install -r app/build/outputs/apk/debug/app-debug.apk
+
+# 单元测试（纯 JVM，不需要设备）
+./gradlew :core:test :helper:test
+
+# 打包成独立小精灵（0.77 秒）
+python packer/make_sprite.py     --shell app/build/outputs/apk/debug/app-debug.apk     --script app/src/main/assets/scripts/demo.js     --label "小鱼示例" --pkg com.whx.sprite.demo     --out dist/xiaoyu-demo.apk
+```
+
+> 构建依赖走阿里云镜像（本机直连 Maven Central 的 TLS 会被中断），见 `settings.gradle` 注释。
 
 ## 环境
 
