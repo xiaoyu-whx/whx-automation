@@ -40,6 +40,8 @@ python tools/whx.py run app/src/main/assets/scripts/find_image_demo.js
 python tools/whx.py shot dist/screen.png
 python tools/whx.py history --limit 5
 python tools/whx.py schedule list
+python tools/whx.py ui enable      # 无障碍（脚本读界面文字的前提）
+python tools/whx.py run app/src/main/assets/scripts/ui_demo.js
 ```
 
 **期望**（run 的输出）：
@@ -65,6 +67,8 @@ python tools/whx.py schedule list
 | 8 | 小精灵内找图 | `找图命中 … 得分 1.000` |
 | 9 | 定时任务到点 | `闹钟触发` → `done ok=true` → 自动续次日 |
 | 10 | 失败重试（`retry=2`） | 共 3 次尝试，间隔 2 秒 |
+| 11 | `ui enable` 后在系统设置里跑 `ui_demo.js` | `界面文本节点 17 个`、`找「设置」→ 256,127` |
+| 12 | `ui_click_demo.js` 点击「电池」 | Activity 变为 `Settings$PowerUsageSummaryActivity` |
 
 ## 5. 性能基线（回归对比用）
 
@@ -89,3 +93,6 @@ python tools/whx.py schedule list
    反射与动态代理的类名被裁会**静默失效**。
 3. **改了 packer**：注意 zip 同名条目，apksigner 会拒绝签名。
 4. **模板换了界面**：模板必须取自将要匹配的那个界面（开发包 ≠ 小精灵）。
+5. **用了 `--cold`**：force-stop 会摘掉无障碍服务，之后要重新 `ui enable`。
+6. **PC 驱动脚本**：走广播 `RUN_SCRIPT`（不是 Activity intent）；广播要带
+   `-f 0x00000020`，且必须先挂 logcat 再发广播，否则几毫秒结束的脚本日志会全丢。
