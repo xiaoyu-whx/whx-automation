@@ -1,6 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
+    <!-- 声明给 root 管理器看（老式 Superuser 用它避免"未定义"红字警告） -->
+    <uses-permission android:name="android.permission.ACCESS_SUPERUSER" />
+
     <!-- 与 PC 调试通道通信（仅开发期使用） -->
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />

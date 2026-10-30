@@ -37,6 +37,9 @@
 所以"硬件能力"必须放在 root 进程里。helper 仍是 APK 的组成部分（作为 dex 随 APK 分发，
 首次运行时从 assets 释放，用 `su -c app_process` 启动），**不增加交付物**。
 
+> 通道选型：**TCP 127.0.0.1**，不是抽象命名空间的 LocalSocket。跨 uid 时后者容易撞
+> SELinux 策略，而 TCP 回环在所有目标环境一致可用（实测往返 0.06ms、3.5MB 传输 4.9ms）。
+
 替代方案的代价（都不采用）：
 
 | 方案 | 代价 |
@@ -99,21 +102,40 @@ interface InputBackend {          // 触控后端
 **脚本线程阻塞为什么没问题**：脚本在独立线程，不影响 UI 与前台服务；且单次操作
 只有 11~31ms（实测），同步调用代价可接受 —— 详见 [api.md](api.md) 第 1 节。
 
-## 4. 实测数据（2026-10-30 · 雷电 9 · Android 9 · x86_64 · 720×1280）
+## 4. 实测数据
 
-| 阶段 | P50 | 说明 |
+### 4.1 最小 Java 程序（旁路验证，无 App 结构）
+
+2026-10-30 · 雷电 9 · Android 9 · x86_64 · 720×1280：
+
+| 阶段 | P50 |
+| --- | --- |
+| `SurfaceControl.screenshot()` 合成 | 3.5 ms |
+| HARDWARE → ARGB_8888 回读 | 5.7 ms |
+| `getPixels()` → int[] | 2.3 ms |
+| **合计** | **11.4 ms** |
+| 9 条 evdev 事件写入 | 0.033 ms |
+| 完整 tap（按住 30ms） | 31.3 ms |
+
+对照组：`adb exec-out screencap` 141.6ms；`input tap` 134.6ms；shell 里 9 条 `sendevent` 210ms。
+
+### 4.2 正式链路（App ⇄ Helper，阶段二实测）
+
+100 次连续抓帧，整屏 720×1280：
+
+| 环节 | P50 | 说明 |
 | --- | --- | --- |
-| `SurfaceControl.screenshot()` | 3.5 ms | SurfaceFlinger 合成，binder 往返 |
-| HARDWARE → ARGB_8888 回读 | 5.7 ms | GPU 回读，**不可省略** |
-| `getPixels()` → int[] | 2.3 ms | |
-| **截图合计** | **11.4 ms** | |
-| 9 条 evdev 事件写入 | 0.033 ms | |
-| **完整 tap（按住 30ms）** | **31.3 ms** | 按住时长是延迟下限 |
+| helper 内合成 | 3.3 ms | SurfaceFlinger |
+| helper 内硬件位图回读 | 6.0 ms | 不可省略 |
+| helper 内 `getPixels` | 3.7 ms | |
+| 像素传输（TCP 回环，3.5MB） | ≈4.9 ms | 约 730MB/s |
+| **端到端 P50 / P99** | **19.6 / 23.4 ms** | |
 
-对照组（同一台机器、同一帧）：`adb exec-out screencap` = 141.6ms；`input tap` = 134.6ms；
-shell 里 9 条 `sendevent` = 210ms（每条 17ms 进程开销）。
+其它实测：区域抓帧 360×320 → P50 13.9ms（0.44MB）；helper 启动+连接 249ms；
+ping 往返 0.06ms；杀 helper 后 124ms 自愈；500 次抓帧内存无增长。
 
-**结论：进程内实现比 adb 方案快 4~12 倍，且瓶颈已转移到"平台本身"而非我们的代码。**
+**结论**：端到端守住 20ms 目标，不需要 SharedMemory；剩余优化空间在 helper 内部的
+硬件位图回读（6ms），阶段八再评估。
 
 ## 5. 关键技术细节
 
