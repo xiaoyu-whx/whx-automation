@@ -680,12 +680,14 @@ def cmd_history(args):
 
 def cmd_pack(args):
     packer = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "packer", "make_sprite.py")
+    # 不指定 --out 就按包名生成默认路径（之前传 None 会让 packer 崩掉）
+    out = args.out or os.path.join("dist", "%s.apk" % args.pkg.split(".")[-1])
     cmd = [sys.executable, packer,
            "--shell", args.shell,
            "--script", args.script,
            "--label", args.label,
            "--pkg", args.pkg,
-           "--out", args.out]
+           "--out", out]
     if args.icon:
         cmd += ["--icon", str(args.icon)]
     if args.config:

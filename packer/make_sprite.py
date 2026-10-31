@@ -272,7 +272,8 @@ def build_sprite(args) -> str:
                                "--ks-pass", "pass:" + args.key_pass,
                                "--key-pass", "pass:" + args.key_pass,
                                "--out", args.out, aligned],
-                              capture_output=True, text=True)
+                              capture_output=True, text=True,
+                              encoding="utf-8", errors="replace")
         if sign.returncode != 0:
             print("[apksigner 失败]")
             print(sign.stdout)
@@ -287,8 +288,9 @@ def verify(apk: str, aapt2: str):
     """用 aapt2 打印清单，肉眼确认 package 与 label 已改。"""
     try:
         out = subprocess.run([aapt2, "dump", "xmltree", apk, "--file", "AndroidManifest.xml"],
-                             capture_output=True, text=True, timeout=30)
-        text = out.stdout
+                             capture_output=True, text=True, timeout=30,
+                             encoding="utf-8", errors="replace")
+        text = out.stdout or ""
         lines = [l.strip() for l in text.splitlines()
                  if "package=" in l or "label" in l]
         for line in lines[:6]:
