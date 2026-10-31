@@ -182,7 +182,7 @@ def cmd_ls(args):
 
 def do_run(adb: Adb, src: str, timeout: float, wait: bool = True,
            echo: bool = True, cold: bool = False, push_only: bool = False,
-           config: str = "", pkg: str = APP_ID) -> int:
+           config: str = "", pkg: str = APP_ID, quiet: bool = False) -> int:
     """推脚本 → 冷启动运行 → 跟日志。返回脚本的成败（0 成功 / 1 失败）。"""
     name = os.path.basename(src)
 
@@ -225,7 +225,7 @@ def do_run(adb: Adb, src: str, timeout: float, wait: bool = True,
               "-n %s --es script %s%s" % (component(pkg, RUN_RECEIVER), name, extra))
     if not wait:
         return 0
-    return consume_log(proc, wait_done=True, timeout=timeout)
+    return consume_log(proc, wait_done=True, timeout=timeout, quiet=quiet)
 
 
 def cmd_run(args):
@@ -321,7 +321,7 @@ def start_logcat(adb: Adb):
 
 
 def consume_log(proc, wait_done: bool, timeout: float = 120,
-                done_marker: str = DONE_MARK) -> int:
+                done_marker: str = DONE_MARK, quiet: bool = False) -> int:
     started = time.time()
     failed = False
     try:
@@ -331,7 +331,8 @@ def consume_log(proc, wait_done: bool, timeout: float = 120,
                 continue
             if noisy_stack_frame(line):
                 continue
-            print(clean_log(line))
+            if not quiet:
+                print(clean_log(line))
             if " E WHX/" in line:
                 failed = True        # 任何本项目的 E 级日志都算失败
             if " E WHX/RunScript" in line:
@@ -571,6 +572,92 @@ def cmd_ui(args):
     return 0
 
 
+def sample_memory(adb: Adb, pkg: str) -> dict:
+    """采一次内存/进程指标。dumpsys meminfo 的列是 KB。"""
+    out = adb.shell("dumpsys meminfo %s" % pkg, check=False)
+    metrics = {"pss": None, "dalvik": None, "native": None}
+    for line in out.splitlines():
+        parts = line.split()
+        if len(parts) >= 3:
+            if parts[0] == "TOTAL":
+                try:
+                    metrics["pss"] = int(parts[1])
+                except ValueError:
+                    pass
+            elif parts[0] == "Dalvik" and parts[1] == "Heap":
+                try:
+                    metrics["dalvik"] = int(parts[2])
+                except ValueError:
+                    pass
+            elif parts[0] == "Native" and parts[1] == "Heap":
+                try:
+                    metrics["native"] = int(parts[2])
+                except ValueError:
+                    pass
+    helpers = adb.shell("ps -A -o ARGS | grep -c HelperMain", check=False).strip()
+    try:
+        metrics["helpers"] = int(helpers)
+    except ValueError:
+        metrics["helpers"] = -1
+    return metrics
+
+
+def cmd_soak(args):
+    """长跑稳定性：反复跑脚本，期间采样内存与进程数。
+
+    验收清单里"云手机连续运行 24 小时内存增长 <10%"这条，必须先有能重复执行的手段。
+    这里跑 N 分钟并给出内存走势与进程数，短跑能提前暴露泄漏。
+    """
+    sys.stdout.reconfigure(line_buffering=True)
+    adb = pick_device(Adb(), args.serial)
+    pkg = args.package
+    deadline = time.time() + args.minutes * 60
+    runs = fails = 0
+    rows = []
+    baseline = sample_memory(adb, pkg)
+    print("长跑开始：%s 分钟，脚本 %s" % (args.minutes, args.script))
+    print("基线  PSS=%sKB Dalvik=%sKB Native=%sKB helper=%d"
+          % (baseline["pss"], baseline["dalvik"], baseline["native"], baseline["helpers"]))
+
+    next_sample = time.time() + args.interval
+    try:
+        while time.time() < deadline:
+            code = do_run(adb, args.script, args.timeout, wait=True, echo=False,
+                          pkg=pkg, quiet=True)
+            runs += 1
+            if code != 0:
+                fails += 1
+            if time.time() >= next_sample:
+                m = sample_memory(adb, pkg)
+                rows.append((time.strftime("%H:%M:%S"), runs, m))
+                print("  %s  第%3d次  PSS=%sKB Dalvik=%sKB Native=%sKB helper=%d"
+                      % (rows[-1][0], runs, m["pss"], m["dalvik"], m["native"], m["helpers"]))
+                next_sample = time.time() + args.interval
+    except KeyboardInterrupt:
+        print("\n（手动中断）")
+
+    final = sample_memory(adb, pkg)
+    print("-" * 62)
+    print("运行 %d 次，失败 %d 次，耗时 %.1f 分钟" % (runs, fails, (time.time() - (deadline - args.minutes * 60)) / 60))
+    if rows:
+        pss = [r[2]["pss"] for r in rows if r[2]["pss"]]
+        if len(pss) >= 2:
+            # 拿首样本比末样本（基线是进程刚起、还没跑过脚本，不能代表稳态）
+            growth = (pss[-1] - pss[0]) / max(1, pss[0]) * 100
+            half = len(pss) // 2
+            first_avg = sum(pss[:half]) / max(1, half)
+            second_avg = sum(pss[half:]) / max(1, len(pss) - half)
+            trend = "单调增长" if second_avg > first_avg * 1.15 else "锯齿波动（GC 正常回收）"
+            print("PSS  首样本 %dKB → 末样本 %dKB（%+.1f%%），区间 %d~%dKB，趋势：%s"
+                  % (pss[0], pss[-1], growth, min(pss), max(pss), trend))
+            print("     前半均值 %.0fKB / 后半均值 %.0fKB" % (first_avg, second_avg))
+        helpers = [r[2]["helpers"] for r in rows]
+        print("helper 进程数 区间 %d~%d（基线 %d）" % (min(helpers), max(helpers), baseline["helpers"]))
+    if fails:
+        print("有 %d 次失败，用 whx history 看原因" % fails)
+    return 1 if fails else 0
+
+
 def cmd_history(args):
     """查运行历史：无人值守任务出问题后，事后追溯用。"""
     adb = pick_device(Adb(), args.serial)
@@ -668,6 +755,13 @@ def main(argv=None) -> int:
     sp.add_argument("--package", default=None,
                     help="覆盖全局 --package")
     sp.set_defaults(func=cmd_ui)
+
+    sp = sub.add_parser("soak", help="长跑稳定性测试（采样内存与进程数）")
+    sp.add_argument("script", help="要反复运行的脚本")
+    sp.add_argument("--minutes", type=float, default=5, help="跑多少分钟，默认 5")
+    sp.add_argument("--interval", type=float, default=30, help="采样间隔秒，默认 30")
+    sp.add_argument("--timeout", type=float, default=120, help="单次运行超时秒")
+    sp.set_defaults(func=cmd_soak)
 
     sp = sub.add_parser("history", help="查看运行历史")
     sp.add_argument("--limit", type=int, default=10)

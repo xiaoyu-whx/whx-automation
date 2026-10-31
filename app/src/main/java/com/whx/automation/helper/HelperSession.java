@@ -54,6 +54,11 @@ public final class HelperSession {
             return true;
         } catch (IOException e) {
             alive = false;
+            // 同样要先关掉：socket 悬着的话旧 helper 会一直等在 read 上
+            try {
+                client.close();
+            } catch (Throwable ignored) {
+            }
             client = null;
             return false;
         }

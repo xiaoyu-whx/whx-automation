@@ -16,6 +16,18 @@
 
 ---
 
+## 三步跑起来
+
+```bash
+cd E:otojs_xiaoyu
+python tools/whx.py doctor                        # 1. 自检：哪一步没准备好会直接说
+python tools/whx.py watch scripts/hello.js        # 2. 编辑 scripts/*.js，存盘即推送运行
+python tools/whx.py pack scripts/hello.js --label 我的工具 --pkg com.whx.sprite.mine   # 3. 可选：打包成独立 APK
+```
+
+**脚本在 PC 上用任何编辑器写**（VS Code / 记事本都行，存 UTF-8），`scripts/` 是放脚本的地方，
+`scripts/hello.js` 是带注释的活模板。完整教程见 [docs/getting-started.md](docs/getting-started.md)。
+
 ## 定位
 
 不是手机端编程软件，而是**用 JavaScript 控制 Android 设备的自动化运行平台**。
@@ -141,6 +153,7 @@ adb install -r app/build/outputs/apk/release/app-release.apk
 | [architecture.md](docs/architecture.md) | 架构决策与实测依据 |
 | [protocol.md](docs/protocol.md) | 协议：实现现状 + 设计稿 |
 | [api.md](docs/api.md) | 脚本 API |
+| [getting-started.md](docs/getting-started.md) | **怎么用：从写第一行脚本到跑起来** |
 | [cli.md](docs/cli.md) | PC 工具链用法 |
 | [packer.md](docs/packer.md) | 小精灵打包（包名/名称/图标/参数/资源） |
 | [release.md](docs/release.md) | 发布壳、签名、R8 keep 规则 |
